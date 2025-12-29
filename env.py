@@ -1,39 +1,38 @@
 """
-    Custom Gymnasium environment.
+Custom Gymnasium environment for the 2D driving simulator.
 
-    Observation Space (8 features):
-        - x_norm: Normalized x position [0, 1]
-        - y_norm: Normalized y position [0, 1]
-        - angle_sin: Sine of car angle [-1, 1]
-        - angle_cos: Cosine of car angle [-1, 1]
-        - velocity_norm: Normalized velocity [0, 1]
-        - on_road: Whether car is on road (0 or 1)
-        - distance_to_center_norm: Normalized distance to track center [0, 1]
-        - track_progress: Progress around the track [0, 1]
+Observation Space (8 features):
+    - x_norm: Normalized x position [0, 1]
+    - y_norm: Normalized y position [0, 1]
+    - angle_sin: Sine of car angle [-1, 1]
+    - angle_cos: Cosine of car angle [-1, 1]
+    - velocity_norm: Normalized velocity [0, 1]
+    - on_road: Whether car is on road (0 or 1)
+    - distance_to_center_norm: Normalized distance to track center [0, 1]
+    - track_progress: Progress around the track [0, 1]
 
-    Action Space (Discrete 5):
-        0: NONE
-        1: ACCELERATE
-        2: BRAKE
-        3: TURN_LEFT
-        4: TURN_RIGHT
+Action Space (Discrete 5):
+    0: NONE
+    1: ACCELERATE
+    2: BRAKE
+    3: TURN_LEFT
+    4: TURN_RIGHT
 
-    Reward Structure:
-        - Speed reward: Positive reward for moving fast on road
-        - Off-road penalty: Negative reward when off the track
-        - Lap completion: Large positive reward for completing a lap
-        - Time penalty: Small negative reward per step to encourage efficiency
-    """
+Reward Structure:
+    - Speed reward: Positive reward for moving fast on road
+    - Off-road penalty: Negative reward when off the track
+    - Lap completion: Large positive reward for completing a lap
+    - Time penalty: Small negative reward per step to encourage efficiency
+
+
+Usage: from env import DrivingEnv, make_env
+"""
 
 import math
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from typing import Optional, Tuple, Dict, Any
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine import GameEngine
 from actions import Action
@@ -44,9 +43,9 @@ class DrivingEnv(gym.Env):
 
     def __init__(
         self,
-        render_mode: Optional[str] = None, # "human" for visual rendering, None for headless
-        max_steps: int = 3000, # Maximum steps before truncation (default ~50 seconds)
-        dt: float = 1/60 # Time step in seconds (default 1/60 for 60 FPS)
+        render_mode: Optional[str] = None,  # "human" for visual rendering, None for headless
+        max_steps: int = 3000,  # Maximum steps before truncation (default ~50 seconds)
+        dt: float = 1/60  # Time step in seconds (default 1/60 for 60 FPS)
     ):
         super().__init__()
 
@@ -88,8 +87,8 @@ class DrivingEnv(gym.Env):
             self._initialized = True
 
     def _get_observation(self) -> np.ndarray:
-       # Convert car state to observation vector
-       # Returns:8-dimensional numpy array with normalized features
+        # Convert car state to observation vector
+        # Returns: 8-dimensional numpy array with normalized features
         state = self.engine.get_state()
 
         # Normalize position to [0, 1]
@@ -141,7 +140,6 @@ class DrivingEnv(gym.Env):
     def _get_track_progress(self, x: float, y: float) -> float:
         # Calculate progress around the track as a value from 0 to 1
         # Returns: Float from 0 to 1 indicating progress around the track
-
         track = self.engine.track
         min_dist = float('inf')
         closest_segment = 0
@@ -198,8 +196,7 @@ class DrivingEnv(gym.Env):
         seed: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
-
-       # Returns: observation: Initial observation, info: Additional information dict
+        # Returns: observation: Initial observation, info: Additional information dict
         super().reset(seed=seed)
 
         # Initialize pygame if needed
@@ -221,7 +218,9 @@ class DrivingEnv(gym.Env):
         self,
         action: int
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        # Returns: new observation after action, reward for this step, terminated: Whether episode ended (lap complete),  truncated: Whether episode was cut short (max steps), additional information
+        # Returns: new observation after action, reward for this step,
+        # terminated: Whether episode ended (lap complete),
+        # truncated: Whether episode was cut short (max steps), additional information
         self.current_step += 1
 
         # Convert action to engine format
@@ -278,6 +277,6 @@ def register_env():
 
     register(
         id="DrivingSimulator-v0",
-        entry_point="PPO.env_ppo:DrivingEnv",
+        entry_point="env:DrivingEnv",
         max_episode_steps=3000,
     )

@@ -3,5 +3,5 @@
 
 from .networks import PolicyNet, ValueNet
 from .agent import PPOAgent
-from .env_ppo import make_env
+from env import make_env
 from .train import train

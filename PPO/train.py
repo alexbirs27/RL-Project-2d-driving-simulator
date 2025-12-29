@@ -1,7 +1,7 @@
 import numpy as np                      # for easy work with vectors/matrices and random/shuffle
 import torch                            # framework for neural networks and tensor operations
 
-from .env_ppo import make_env
+from env import make_env
 from .agent import PPOAgent
 
 
