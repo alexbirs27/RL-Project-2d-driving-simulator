@@ -1,5 +1,6 @@
 import numpy as np                      # for easy work with vectors/matrices and random/shuffle
 import torch                            # framework for neural networks and tensor operations
+import matplotlib.pyplot as plt
 
 from env import make_env
 from .agent import PPOAgent
@@ -62,9 +63,32 @@ def train():
         # Train PPO (update actor + critic)
         agent.train(obs_tensor, actions_tensor, logp_tensor, advantages, returns)  # Perform PPO update on collected data
 
-    # TODO: Add logging/plotting of reward_history
+        if len(reward_history) >= 10:
+            mean_reward = np.mean(reward_history[-10:])
+        else:
+            mean_reward = np.mean(reward_history)
+
+        print(f"[Epoch {epoch}] Mean Reward (last 10 episodes): {mean_reward:.2f}")
+
     # TODO: Add model saving/checkpointing
-    return agent, reward_history
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(reward_history, label="Episode Reward", alpha=0.4)
+
+    if len(reward_history) > 20:
+        moving_avg = np.convolve(reward_history, np.ones(20) / 20, mode="valid")
+        plt.plot(moving_avg, label="Moving Average (20)", linewidth=2)
+
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.title("PPO Training Performance")
+    plt.legend()
+    plt.grid(True)
+
+    plt.savefig("ppo_training_rewards.png")
+    plt.show()
+
+    return agent, reward_history    
 
 
 if __name__ == "__main__":
