@@ -18,6 +18,8 @@ def train(render: bool = False):
     reward_history = []
 
     for epoch in range(epochs):
+        # Update learning rate (linear decay from initial_lr to 0)
+        agent.update_learning_rate(epoch, epochs)
 
         observations = []
         actions = []

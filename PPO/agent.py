@@ -22,13 +22,14 @@ class PPOAgent:
                  ):    
 
         #hyperparametrii
-        self.gamma = gamma             
-        self.lam = lam                 
-        self.clip_eps = clip_eps       
+        self.gamma = gamma
+        self.lam = lam
+        self.clip_eps = clip_eps
         self.steps_per_epoch = steps_per_epoch
-        self.train_iters = train_iters        
+        self.train_iters = train_iters
         self.minibatch_size = minibatch_size
-        self.entropy_coef = entropy_coef  
+        self.entropy_coef = entropy_coef
+        self.initial_lr = lr  
 
         # actor+critic
         self.policy = PolicyNet(state_dim, action_dim)  # Create actor network: receives state -> produces action logits
@@ -39,6 +40,15 @@ class PPOAgent:
         self.opt_value = optim.Adam(self.value_fn.parameters(), lr=lr) # Optimizer for value function (critic)
 
 
+    def update_learning_rate(self, current_epoch, total_epochs):
+        """Linear decay: lr goes from initial_lr to 0 over training"""
+        progress = current_epoch / total_epochs
+        new_lr = self.initial_lr * (1.0 - progress)
+
+        for param_group in self.opt_policy.param_groups:
+            param_group['lr'] = new_lr
+        for param_group in self.opt_value.param_groups:
+            param_group['lr'] = new_lr
 
 
     #action selection= Function that receives a state and returns an action + logp + value (without gradient)
