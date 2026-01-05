@@ -5,12 +5,14 @@ class PolicyNet(nn.Module):
     # Constructor: state_dim = number of state features, action_dim = number of possible actions
     def __init__(self, state_dim=0, action_dim=0):
         super().__init__()
-        # Simple MLP: state_dim -> 256 -> action_dim
+        # MLP: state_dim -> 64 -> 64 -> action_dim (standard PPO architecture)
         # Output is logits (NOT softmax). Softmax will be applied later in agent.act()
         self.policy = nn.Sequential(
-            nn.Linear(state_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, action_dim)
+            nn.Linear(state_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, action_dim)
         )
 
 
@@ -28,11 +30,13 @@ class ValueNet(nn.Module):
     def __init__(self, state_dim=0):   
         super().__init__()
 
-        # Simple MLP: state_dim -> 256 -> 1
+        # MLP: state_dim -> 64 -> 64 -> 1 (standard PPO architecture)
         self.value = nn.Sequential(
-            nn.Linear(state_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1)
+            nn.Linear(state_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
         )
 
     # Forward pass for the critic
