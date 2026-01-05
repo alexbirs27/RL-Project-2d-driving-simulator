@@ -9,8 +9,8 @@ from .networks import PolicyNet, ValueNet
 # PPO Agent
 class PPOAgent:                         
     def __init__(self,                  # Constructor with PPO hyperparameters
-                 state_dim=0,           # State dimension (how many numbers are in the observation)
-                 action_dim=0,          # Number of possible discrete actions
+                 state_dim=8,           # State dimension (how many numbers are in the observation)
+                 action_dim=5,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
                  lam=0.95,              # Lambda for GAE: control between bias/variance
                  clip_eps=0.2,          # Epsilon for PPO clipping (how much the policy is allowed to change per update)
@@ -38,7 +38,7 @@ class PPOAgent:
 
 
 
-    #qction selection= Function that receives a state and returns an action + logp + value (without gradient)
+    #action selection= Function that receives a state and returns an action + logp + value (without gradient)
     def act(self, state):  
         # input
         # state = numpy array 

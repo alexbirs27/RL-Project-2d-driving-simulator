@@ -7,12 +7,11 @@ from .agent import PPOAgent
 
 
 # Main Training Loop (collection + update)
-def train():
-    env = make_env()  # DrivingEnv: 8 observations, 5 actions
-
-    state_dim = env.observation_space.shape[0]  # 8
-    action_dim = env.action_space.n             # 5
-    agent = PPOAgent(state_dim=state_dim, action_dim=action_dim)
+def train(render: bool = False):
+    render_mode = "human" if render else None
+    env = make_env(render_mode=render_mode)  # DrivingEnv: 8 observations, 5 actions
+            
+    agent = PPOAgent()
 
     epochs = 200
     steps_per_epoch = agent.steps_per_epoch
@@ -46,6 +45,9 @@ def train():
             ep_reward += reward
             state = next_state
 
+            if render:
+                env.render()
+
             if done:
                 reward_history.append(ep_reward)
                 state, _ = env.reset()                   # Reset for a new episode
@@ -70,7 +72,6 @@ def train():
 
         print(f"[Epoch {epoch}] Mean Reward (last 10 episodes): {mean_reward:.2f}")
 
-    # TODO: Add model saving/checkpointing
     
     plt.figure(figsize=(10, 5))
     plt.plot(reward_history, label="Episode Reward", alpha=0.4)
@@ -92,4 +93,6 @@ def train():
 
 
 if __name__ == "__main__":
-    train()
+    import sys
+    render = "--render" in sys.argv
+    train(render=render)
