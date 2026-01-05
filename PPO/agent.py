@@ -14,10 +14,12 @@ class PPOAgent:
                  gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
                  lam=0.95,              # Lambda for GAE: control between bias/variance
                  clip_eps=0.2,          # Epsilon for PPO clipping (how much the policy is allowed to change per update)
-                 lr=3e-4,               # Learning rate: how large the learning steps are
+                 lr=1e-4,               # Learning rate: how large the learning steps are
                  steps_per_epoch=4096,  # How many steps to collect in the environment before an update
                  train_iters=10,        # How many times to pass through the data during update (internal epochs on the collected batch)
-                 minibatch_size=64):    # Minibatch size during training
+                 minibatch_size=64,     # Minibatch size during training
+                 entropy_coef = 0.01
+                 ):    
 
         #hyperparametrii
         self.gamma = gamma             
@@ -25,7 +27,8 @@ class PPOAgent:
         self.clip_eps = clip_eps       
         self.steps_per_epoch = steps_per_epoch
         self.train_iters = train_iters        
-        self.minibatch_size = minibatch_size  
+        self.minibatch_size = minibatch_size
+        self.entropy_coef = entropy_coef  
 
         # actor+critic
         self.policy = PolicyNet(state_dim, action_dim)  # Create actor network: receives state -> produces action logits
@@ -145,8 +148,11 @@ class PPOAgent:
                 # Clipped ratio
                 clipped = torch.clamp(ratio, 1 - self.clip_eps, 1 + self.clip_eps)
 
+                #entropy bonus
+                entropy = dist.entropy().mean()
+
                 #Policy loss (PPO clipped objective)
-                policy_loss = -torch.min(ratio * b_adv, clipped * b_adv).mean()
+                policy_loss = -torch.min(ratio * b_adv, clipped * b_adv).mean() - self.entropy_coef * entropy
 
                 #Value loss
                 value_pred = self.value_fn(b_obs).squeeze(-1)  # [B]
