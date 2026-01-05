@@ -161,22 +161,3 @@ class PPOAgent:
                 self.opt_value.zero_grad()
                 value_loss.backward()
                 self.opt_value.step()
-
-    # Save model weights to disk
-    def save(self, path):
-        """Save both policy and value networks to a single file"""
-        torch.save({
-            'policy_state_dict': self.policy.state_dict(),
-            'value_fn_state_dict': self.value_fn.state_dict(),
-            'opt_policy_state_dict': self.opt_policy.state_dict(),
-            'opt_value_state_dict': self.opt_value.state_dict()
-        }, path)
-
-    # Load model weights from disk
-    def load(self, path):
-        """Load both policy and value networks from a single file"""
-        checkpoint = torch.load(path)
-        self.policy.load_state_dict(checkpoint['policy_state_dict'])
-        self.value_fn.load_state_dict(checkpoint['value_fn_state_dict'])
-        self.opt_policy.load_state_dict(checkpoint['opt_policy_state_dict'])
-        self.opt_value.load_state_dict(checkpoint['opt_value_state_dict'])
