@@ -7,10 +7,10 @@ from .networks import PolicyNet, ValueNet
 
 
 # PPO Agent
-class PPOAgent:                         
+class PPOAgent:
     def __init__(self,                  # Constructor with PPO hyperparameters
-                 state_dim=8,           # State dimension (how many numbers are in the observation)
-                 action_dim=5,          # Number of possible discrete actions
+                 state_dim=12,          # State dimension (how many numbers are in the observation)
+                 action_dim=9,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
                  lam=0.95,              # Lambda for GAE: control between bias/variance
                  clip_eps=0.2,          # Epsilon for PPO clipping (how much the policy is allowed to change per update)

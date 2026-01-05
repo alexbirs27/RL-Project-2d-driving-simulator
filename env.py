@@ -1,282 +1,327 @@
 """
-Custom Gymnasium environment for the 2D driving simulator.
+Gymnasium-compatible environment wrapper for the racing game.
 
-Observation Space (8 features):
-    - x_norm: Normalized x position [0, 1]
-    - y_norm: Normalized y position [0, 1]
-    - angle_sin: Sine of car angle [-1, 1]
-    - angle_cos: Cosine of car angle [-1, 1]
-    - velocity_norm: Normalized velocity [0, 1]
-    - on_road: Whether car is on road (0 or 1)
-    - distance_to_center_norm: Normalized distance to track center [0, 1]
-    - track_progress: Progress around the track [0, 1]
+This environment can be used by ALL RL algorithms (DQN, PPO, A2C, etc.)
 
-Action Space (Discrete 5):
-    0: NONE
-    1: ACCELERATE
-    2: BRAKE
-    3: TURN_LEFT
-    4: TURN_RIGHT
+Observation Space (12 values):
+    - velocity (normalized)
+    - angular velocity approximation
+    - on_road flag
+    - distance to track center (normalized)
+    - direction to next checkpoint (cos)
+    - direction to next checkpoint (sin)
+    - angle difference to track direction
+    - distance to next checkpoint (normalized)
+    - car direction (cos)
+    - car direction (sin)
+    - track progress
+    - speed as fraction of max
+
+Action Space (9 discrete actions):
+    0: Nothing
+    1: Accelerate
+    2: Brake
+    3: Turn left
+    4: Turn right
+    5: Accelerate + Turn left
+    6: Accelerate + Turn right
+    7: Brake + Turn left
+    8: Brake + Turn right
 
 Reward Structure:
-    - Speed reward: Positive reward for moving fast on road
-    - Off-road penalty: Negative reward when off the track
-    - Lap completion: Large positive reward for completing a lap
-    - Time penalty: Small negative reward per step to encourage efficiency
+    - +10.0 per new checkpoint visited
+    - +0.5 for speed (when on road)
+    - +0.1 for staying on road
+    - -1.0 for going off road
+    - -0.3 for standing still
+    - +0.05 for accelerating (encourages movement)
+    - +200 + time_bonus for completing lap (faster = better)
+    - -0.05 per step (time penalty)
 
-
-Usage: from env import DrivingEnv, make_env
+Usage:
+    from env import make_env
+    env = make_env(render_mode="human")  # or None for headless
 """
 
 import math
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from typing import Optional, Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
-from engine import GameEngine
-from actions import Action
+from game import GameEngine, Action
 
 
-class DrivingEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
+class RacingEnv(gym.Env):
+    """
+    Gymnasium environment wrapper for the 2D racing game.
+    """
 
-    def __init__(
-        self,
-        render_mode: Optional[str] = None,  # "human" for visual rendering, None for headless
-        max_steps: int = 3000,  # Maximum steps before truncation (default ~50 seconds)
-        dt: float = 1/60  # Time step in seconds (default 1/60 for 60 FPS)
-    ):
+    metadata = {"render_modes": ["human", None], "render_fps": 60}
+
+    def __init__(self, render_mode: Optional[str] = None, max_steps: int = 3000):
         super().__init__()
 
         self.render_mode = render_mode
         self.max_steps = max_steps
-        self.dt = dt
 
-        # Create game engine (headless unless render_mode is "human")
-        self._render_enabled = render_mode == "human"
-        self.engine = GameEngine(render=self._render_enabled)
+        self.engine = GameEngine(
+            width=1200,
+            height=800,
+            render=(render_mode == "human")
+        )
 
-        # Define observation space (8 continuous features)
+        # 9 actions: combinations of acceleration/brake with steering
+        self.action_space = spaces.Discrete(9)
+
+        # 12 observations
         self.observation_space = spaces.Box(
-            low=np.array([0, 0, -1, -1, 0, 0, 0, 0], dtype=np.float32),
-            high=np.array([1, 1, 1, 1, 1, 1, 1, 1], dtype=np.float32),
+            low=-1.0,
+            high=1.0,
+            shape=(12,),
             dtype=np.float32
         )
 
-        # Define action space (5 discrete actions)
-        self.action_space = spaces.Discrete(5)
-
-        # Action mapping
-        self._action_map = {
-            0: [],                      # NONE
-            1: [Action.ACCELERATE],     # ACCELERATE
-            2: [Action.BRAKE],          # BRAKE
-            3: [Action.TURN_LEFT],      # TURN_LEFT
-            4: [Action.TURN_RIGHT],     # TURN_RIGHT
+        # Action mapping: allows combined actions
+        self.action_map = {
+            0: [],                                      # Nothing
+            1: [Action.ACCELERATE],                     # Accelerate
+            2: [Action.BRAKE],                          # Brake
+            3: [Action.TURN_LEFT],                      # Turn left
+            4: [Action.TURN_RIGHT],                     # Turn right
+            5: [Action.ACCELERATE, Action.TURN_LEFT],   # Accelerate + Left
+            6: [Action.ACCELERATE, Action.TURN_RIGHT],  # Accelerate + Right
+            7: [Action.BRAKE, Action.TURN_LEFT],        # Brake + Left
+            8: [Action.BRAKE, Action.TURN_RIGHT],       # Brake + Right
         }
 
-        # Episode tracking
+        self.dt = 1.0 / 60.0
         self.current_step = 0
-        self.prev_progress = 0.0
-        self._initialized = False
-
-    def _init_pygame(self):
-        if not self._initialized:
-            self.engine.init()
-            self._initialized = True
-
-    def _get_observation(self) -> np.ndarray:
-        # Convert car state to observation vector
-        # Returns: 8-dimensional numpy array with normalized features
-        state = self.engine.get_state()
-
-        # Normalize position to [0, 1]
-        x_norm = state.x / self.engine.width
-        y_norm = state.y / self.engine.height
-
-        # Use sin/cos for angle (avoids discontinuity at -pi/pi)
-        angle_sin = math.sin(state.angle)
-        angle_cos = math.cos(state.angle)
-
-        # Normalize velocity to [0, 1]
-        max_vel = self.engine.car.max_velocity
-        velocity_norm = np.clip(state.velocity / max_vel, 0, 1)
-
-        # On-road flag
-        on_road = 1.0 if state.on_road else 0.0
-
-        # Distance to track center (normalized)
-        distance_to_center = self._get_distance_to_center(state.x, state.y)
-        distance_norm = np.clip(distance_to_center / (self.engine.track.road_width / 2), 0, 1)
-
-        # Track progress [0, 1]
-        track_progress = self._get_track_progress(state.x, state.y)
-
-        return np.array([
-            x_norm,
-            y_norm,
-            angle_sin,
-            angle_cos,
-            velocity_norm,
-            on_road,
-            distance_norm,
-            track_progress
-        ], dtype=np.float32)
-
-    def _get_distance_to_center(self, x: float, y: float) -> float:
-        # Calculate distance from point to nearest track center
-        min_dist = float('inf')
-        track = self.engine.track
-
-        for i in range(len(track.center_points)):
-            p1 = track.center_points[i]
-            p2 = track.center_points[(i + 1) % len(track.center_points)]
-            dist = track._point_to_segment_distance(x, y, p1, p2)
-            min_dist = min(min_dist, dist)
-
-        return min_dist
-
-    def _get_track_progress(self, x: float, y: float) -> float:
-        # Calculate progress around the track as a value from 0 to 1
-        # Returns: Float from 0 to 1 indicating progress around the track
-        track = self.engine.track
-        min_dist = float('inf')
-        closest_segment = 0
-
-        for i in range(len(track.center_points)):
-            p1 = track.center_points[i]
-            p2 = track.center_points[(i + 1) % len(track.center_points)]
-            dist = track._point_to_segment_distance(x, y, p1, p2)
-            if dist < min_dist:
-                min_dist = dist
-                closest_segment = i
-
-        # Progress is the segment index divided by total segments
-        progress = closest_segment / len(track.center_points)
-        return progress
-
-    def _calculate_reward(self, state, prev_progress: float) -> float:
-        reward = 0.0
-
-        # Speed reward (only when on road)
-        if state.on_road:
-            speed_reward = (state.velocity / self.engine.car.max_velocity) * 0.1
-            reward += speed_reward
-
-        # Progress reward
-        current_progress = self._get_track_progress(state.x, state.y)
-
-        # Handle wrap-around (when progress goes from ~1 to ~0)
-        progress_delta = current_progress - prev_progress
-        if progress_delta < -0.5:  # Wrapped around
-            progress_delta += 1.0
-        elif progress_delta > 0.5:  # Went backwards across start
-            progress_delta -= 1.0
-
-        reward += progress_delta * 10.0  # Scale progress reward
-
-        # Off-road penalty
-        if not state.on_road:
-            reward -= 0.5
-
-        # Lap completion bonus
-        if state.lap_complete:
-            # Bonus inversely proportional to lap time (faster = more reward)
-            time_bonus = max(100 - state.lap_time, 50)
-            reward += time_bonus
-
-        # Small time penalty to encourage efficiency
-        reward -= 0.01
-
-        return reward
+        self.last_checkpoint = 0
+        self.visited_checkpoints = set()
+        self.last_angle = 0.0
+        self.no_progress_steps = 0
 
     def reset(
         self,
         seed: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        # Returns: observation: Initial observation, info: Additional information dict
+        """Reset the environment."""
         super().reset(seed=seed)
 
-        # Initialize pygame if needed
-        self._init_pygame()
+        if not hasattr(self, '_initialized'):
+            self.engine.init()
+            self._initialized = True
+        else:
+            self.engine.reset()
 
-        # Reset the game engine
-        self.engine.reset()
-
-        # Reset episode tracking
         self.current_step = 0
-        self.prev_progress = 0.0
+        self.last_checkpoint = 0
+        self.visited_checkpoints = set()
+        self.visited_checkpoints.add(0)
+        self.last_angle = self.engine.car.angle
+        self.no_progress_steps = 0
 
-        observation = self._get_observation()
-        info = {"lap_time": 0.0, "on_road": True}
+        obs = self._get_observation()
+        info = self._get_info()
 
-        return observation, info
+        return obs, info
 
-    def step(
-        self,
-        action: int
-    ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        # Returns: new observation after action, reward for this step,
-        # terminated: Whether episode ended (lap complete),
-        # truncated: Whether episode was cut short (max steps), additional information
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """Execute one environment step."""
+        actions = self.action_map[action]
+        state = self.engine.step(actions, self.dt)
         self.current_step += 1
 
-        # Convert action to engine format
-        actions = self._action_map.get(action, [])
-
-        # Store previous progress for reward calculation
-        prev_progress = self._get_track_progress(
-            self.engine.car.x,
-            self.engine.car.y
-        )
-
-        # Execute step in game engine
-        state = self.engine.step(actions, self.dt)
-
-        # Calculate reward
-        reward = self._calculate_reward(state, prev_progress)
-
-        # Check termination conditions
+        obs = self._get_observation()
+        reward = self._calculate_reward(state, action)
         terminated = state.lap_complete
-        truncated = self.current_step >= self.max_steps
+        truncated = self._check_truncation(state)
+        info = self._get_info()
 
-        # Get observation
-        observation = self._get_observation()
+        self.last_angle = state.angle
 
-        # Build info dict
-        info = {
+        if self.render_mode == "human":
+            self.render()
+
+        return obs, reward, terminated, truncated, info
+
+    def _get_observation(self) -> np.ndarray:
+        """Convert game state to observation array."""
+        state = self.engine.get_state()
+        car = self.engine.car
+        track = self.engine.track
+
+        # Current checkpoint and next checkpoint
+        current_cp = track.get_nearest_checkpoint(state.x, state.y)
+        next_cp = (current_cp + 3) % track.num_checkpoints  # Look a few checkpoints ahead
+
+        # Direction to next checkpoint
+        next_point = track.center_points[next_cp]
+        dx = next_point[0] - state.x
+        dy = next_point[1] - state.y
+        dist_to_next = math.sqrt(dx * dx + dy * dy)
+
+        # Normalize direction to next checkpoint
+        if dist_to_next > 0:
+            dir_to_next_x = dx / dist_to_next
+            dir_to_next_y = dy / dist_to_next
+        else:
+            dir_to_next_x = 0.0
+            dir_to_next_y = 0.0
+
+        # Angle to next checkpoint
+        angle_to_next = math.atan2(dx, -dy)  # Same convention as car angle
+
+        # Angle difference (how much we need to turn)
+        angle_diff = angle_to_next - state.angle
+        # Normalize to [-pi, pi]
+        while angle_diff > math.pi:
+            angle_diff -= 2 * math.pi
+        while angle_diff < -math.pi:
+            angle_diff += 2 * math.pi
+
+        # Car direction
+        car_dir_x = math.sin(state.angle)
+        car_dir_y = -math.cos(state.angle)
+
+        # Distance to track center
+        center_point = track.center_points[current_cp]
+        dist_to_center = math.sqrt(
+            (state.x - center_point[0]) ** 2 +
+            (state.y - center_point[1]) ** 2
+        )
+        dist_to_center_norm = np.clip(dist_to_center / (track.road_width / 2), 0, 2) - 1
+
+        # Angular velocity approximation
+        angular_vel = (state.angle - self.last_angle) / self.dt
+        angular_vel_norm = np.clip(angular_vel / 3.0, -1, 1)
+
+        # Progress
+        progress = track.get_progress(current_cp)
+
+        obs = np.array([
+            np.clip(state.velocity / car.max_velocity, -1, 1),          # Velocity normalized
+            angular_vel_norm,                                            # Angular velocity
+            1.0 if state.on_road else -1.0,                             # On road
+            dist_to_center_norm,                                         # Distance to center
+            dir_to_next_x,                                               # Direction to next CP (x)
+            dir_to_next_y,                                               # Direction to next CP (y)
+            np.clip(angle_diff / math.pi, -1, 1),                       # Angle difference
+            np.clip(dist_to_next / 300.0, 0, 1) * 2 - 1,               # Distance to next CP
+            car_dir_x,                                                   # Car direction (x)
+            car_dir_y,                                                   # Car direction (y)
+            progress * 2 - 1,                                            # Progress
+            np.clip(state.velocity / car.max_velocity, 0, 1),           # Speed fraction
+        ], dtype=np.float32)
+
+        return obs
+
+    def _calculate_reward(self, state, action: int) -> float:
+        """Calculate reward for the current step."""
+        reward = 0.0
+        track = self.engine.track
+        car = self.engine.car
+
+        current_cp = track.get_nearest_checkpoint(state.x, state.y)
+
+        # Big reward for visiting new checkpoints
+        if current_cp not in self.visited_checkpoints:
+            # Check if it's forward progress (not going backwards)
+            diff = (current_cp - self.last_checkpoint) % track.num_checkpoints
+
+            if diff > 0 and diff < track.num_checkpoints // 2:
+                reward += 15.0 * diff  # Big reward for forward progress
+                self.visited_checkpoints.add(current_cp)
+                self.no_progress_steps = 0
+            elif diff > track.num_checkpoints // 2:
+                # Going backwards
+                reward -= 2.0
+                self.no_progress_steps += 1
+        else:
+            self.no_progress_steps += 1
+
+        self.last_checkpoint = current_cp
+
+        # Reward for speed (only when on road and moving forward)
+        if state.on_road and state.velocity > 0:
+            speed_reward = (state.velocity / car.max_velocity) * 1.0
+            reward += speed_reward
+
+        # Penalty for being off road
+        if not state.on_road:
+            reward -= 0.5  # Reduced penalty
+
+        # Reward for staying on road
+        if state.on_road:
+            reward += 0.2
+
+        # Penalty for standing still
+        if abs(state.velocity) < 5.0:
+            reward -= 0.1  # Reduced penalty
+
+        # Reward for accelerating (encourage movement)
+        if action in [1, 5, 6]:  # Actions with acceleration
+            reward += 0.1
+
+        # Big reward for completing lap - faster = better!
+        if state.lap_complete:
+            base_reward = 300.0
+            # Time bonus: faster lap = more reward
+            # At 30 seconds: +700 bonus, at 60 seconds: +400 bonus, at 100+ seconds: +0
+            time_bonus = max(0.0, 1000.0 - state.lap_time * 10.0)
+            reward += base_reward + time_bonus
+
+        return reward
+
+    def _check_truncation(self, state) -> bool:
+        """Check if episode should be truncated."""
+        if self.current_step >= self.max_steps:
+            return True
+
+        # Truncate if no progress for too long
+        if self.no_progress_steps > 500:
+            return True
+
+        return False
+
+    def _get_info(self) -> Dict[str, Any]:
+        """Get additional info about the environment state."""
+        state = self.engine.get_state()
+        return {
             "lap_time": state.lap_time,
+            "lap_complete": state.lap_complete,
             "on_road": state.on_road,
             "velocity": state.velocity,
-            "lap_complete": state.lap_complete,
+            "checkpoint": self.last_checkpoint,
+            "checkpoints_visited": len(self.visited_checkpoints),
             "step": self.current_step
         }
 
-        return observation, reward, terminated, truncated, info
-
     def render(self):
+        """Render the environment."""
         if self.render_mode == "human":
             self.engine.render()
+            import pygame
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.close()
 
     def close(self):
-        if self._initialized:
-            self.engine.quit()
-            self._initialized = False
+        """Clean up resources."""
+        self.engine.quit()
 
 
-def make_env(render_mode: Optional[str] = None, max_steps: int = 3000) -> DrivingEnv:
-    return DrivingEnv(render_mode=render_mode, max_steps=max_steps)
+def make_env(render_mode: Optional[str] = None, max_steps: int = 3000):
+    """
+    Factory function to create the environment.
 
+    Args:
+        render_mode: "human" for visual rendering, None for headless
+        max_steps: Maximum steps per episode
 
-# For compatibility with standard gym.make() pattern
-def register_env():
-    # Register the environment with Gymnasium.
-    from gymnasium.envs.registration import register
-
-    register(
-        id="DrivingSimulator-v0",
-        entry_point="env:DrivingEnv",
-        max_episode_steps=3000,
-    )
+    Returns:
+        RacingEnv instance
+    """
+    return RacingEnv(render_mode=render_mode, max_steps=max_steps)

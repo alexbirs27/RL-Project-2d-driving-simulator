@@ -16,6 +16,7 @@ class Track:
         self.road_width = 100
 
         self.center_points = self._create_oval_track()
+        self.num_checkpoints = len(self.center_points)
         self.start_position = self.center_points[0]
         self.start_angle = self._calculate_start_angle()
 
@@ -154,3 +155,20 @@ class Track:
             (p1[0] + perpendicular[0], p1[1] + perpendicular[1]),
             (p1[0] - perpendicular[0], p1[1] - perpendicular[1])
         )
+
+    def get_nearest_checkpoint(self, x: float, y: float) -> int:
+        """Get the index of the nearest checkpoint to the given position."""
+        min_dist = float('inf')
+        nearest_idx = 0
+
+        for i, point in enumerate(self.center_points):
+            dist = math.sqrt((x - point[0]) ** 2 + (y - point[1]) ** 2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_idx = i
+
+        return nearest_idx
+
+    def get_progress(self, checkpoint: int) -> float:
+        """Get progress as a fraction of the track completed (0.0 to 1.0)."""
+        return checkpoint / self.num_checkpoints
