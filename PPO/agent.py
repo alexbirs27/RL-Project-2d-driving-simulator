@@ -18,7 +18,8 @@ class PPOAgent:
                  steps_per_epoch=4096,  # How many steps to collect in the environment before an update
                  train_iters=10,        # How many times to pass through the data during update (internal epochs on the collected batch)
                  minibatch_size=64,     # Minibatch size during training
-                 entropy_coef = 0.01
+                 entropy_coef=0.01,    # Entropy bonus coefficient for exploration
+                 max_grad_norm=0.5     # Max gradient norm for clipping (prevents exploding gradients)
                  ):    
 
         #hyperparametrii
@@ -29,6 +30,7 @@ class PPOAgent:
         self.train_iters = train_iters
         self.minibatch_size = minibatch_size
         self.entropy_coef = entropy_coef
+        self.max_grad_norm = max_grad_norm
         self.initial_lr = lr  
 
         # actor+critic
@@ -171,9 +173,11 @@ class PPOAgent:
                 #Optimize actor
                 self.opt_policy.zero_grad()
                 policy_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.opt_policy.step()
 
                 #Optimize critic
                 self.opt_value.zero_grad()
                 value_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.value_fn.parameters(), self.max_grad_norm)
                 self.opt_value.step()
