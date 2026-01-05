@@ -1,0 +1,14 @@
+num_episodes: 5000
+max_steps_per_episode: 3000
+save_frequency: 100
+render_frequency: 50
+eval_frequency: 100
+gamma: 0.99
+device: auto
+learning_rate: 0.0003
+lam: 0.95
+clip_eps: 0.2
+steps_per_epoch: 4096
+train_iters: 10
+minibatch_size: 64
+hidden_dim: 256

@@ -1,0 +1,36 @@
+# A2C Configuration for DrivingEnv (env.py)
+# Optimized for 8-dimensional observation space, 5 discrete actions
+
+# Environment settings
+env:
+  name: "DrivingEnv"
+  max_steps: 3000  # Maximum steps per episode (~50 seconds at 60 FPS)
+  render_mode: null  # Set to "human" for visualization during training
+
+# Agent hyperparameters
+agent:
+  learning_rate: 0.0001  # Reduced for stability (was 0.0003)
+  gamma: 0.99  # Discount factor
+  entropy_coef: 0.02  # Increased exploration (was 0.01)
+  value_loss_coef: 0.5  # Value loss coefficient
+  max_grad_norm: 0.5  # Gradient clipping threshold
+  hidden_size: 128  # Hidden layer size
+
+# Training settings
+training:
+  total_episodes: 5000  # Total training episodes
+  update_frequency: 10  # Increased for stability (was 5)
+  save_frequency: 100  # Save model every N episodes
+  eval_frequency: 50  # Evaluate every N episodes
+  eval_episodes: 10  # Number of episodes for evaluation
+
+# Logging
+logging:
+  log_interval: 10  # Log every N episodes
+  save_dir: "runs"
+  experiment_name: "a2c_driving"
+  tensorboard: true  # Enable TensorBoard logging
+  save_videos: false  # Save evaluation videos
+
+# Device
+device: "auto"  # "auto", "cpu", or "cuda"
