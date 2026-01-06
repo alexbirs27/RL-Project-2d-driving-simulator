@@ -98,12 +98,23 @@ class Track:
         curr_x: float,
         curr_y: float
     ) -> bool:
-        """Check if the car crossed the finish line."""
+        """Check if the car crossed the finish line in the forward direction."""
         p1 = self.center_points[self.finish_line_start]
         p2 = self.center_points[self.finish_line_end]
 
-        direction = (p2[0] - p1[0], p2[1] - p1[1])
-        perpendicular = (-direction[1], direction[0])
+        # Track direction at finish line (forward direction)
+        track_direction = (p2[0] - p1[0], p2[1] - p1[1])
+
+        # Car movement direction
+        car_direction = (curr_x - prev_x, curr_y - prev_y)
+
+        # Check if car is moving in the forward direction (dot product > 0)
+        dot_product = track_direction[0] * car_direction[0] + track_direction[1] * car_direction[1]
+        if dot_product <= 0:
+            # Car is moving backwards - don't count as lap completion
+            return False
+
+        perpendicular = (-track_direction[1], track_direction[0])
         length = math.sqrt(perpendicular[0] ** 2 + perpendicular[1] ** 2)
         if length == 0:
             return False
