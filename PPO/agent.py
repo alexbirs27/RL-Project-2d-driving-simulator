@@ -30,6 +30,7 @@ class PPOAgent:
         self.train_iters = train_iters
         self.minibatch_size = minibatch_size
         self.entropy_coef = entropy_coef
+        self.initial_entropy_coef = entropy_coef  # Store initial value for decay
         self.max_grad_norm = max_grad_norm
         self.initial_lr = lr  
 
@@ -43,15 +44,39 @@ class PPOAgent:
 
 
     def update_learning_rate(self, current_epoch, total_epochs):
-        """Linear decay: lr goes from initial_lr to 0 over training"""
+        """Linear decay: lr goes from initial_lr to 10% of initial_lr over training"""
         progress = current_epoch / total_epochs
-        new_lr = self.initial_lr * (1.0 - progress)
+        new_lr = self.initial_lr * (0.1 + 0.9 * (1.0 - progress))  # Floor at 10% of initial LR
 
         for param_group in self.opt_policy.param_groups:
             param_group['lr'] = new_lr
         for param_group in self.opt_value.param_groups:
             param_group['lr'] = new_lr
 
+    def update_entropy_coef(self, current_epoch, total_epochs):
+        """Decay entropy coefficient from initial value to 10% over training (less exploration over time)"""
+        progress = current_epoch / total_epochs
+        self.entropy_coef = self.initial_entropy_coef * (0.1 + 0.9 * (1.0 - progress))
+
+    def save_checkpoint(self, filepath, epoch, reward):
+        """Save model checkpoint with policy, value network, and training info"""
+        torch.save({
+            'policy_state_dict': self.policy.state_dict(),
+            'value_state_dict': self.value_fn.state_dict(),
+            'policy_optimizer': self.opt_policy.state_dict(),
+            'value_optimizer': self.opt_value.state_dict(),
+            'epoch': epoch,
+            'reward': reward
+        }, filepath)
+
+    def load_checkpoint(self, filepath):
+        """Load model checkpoint"""
+        checkpoint = torch.load(filepath)
+        self.policy.load_state_dict(checkpoint['policy_state_dict'])
+        self.value_fn.load_state_dict(checkpoint['value_state_dict'])
+        self.opt_policy.load_state_dict(checkpoint['policy_optimizer'])
+        self.opt_value.load_state_dict(checkpoint['value_optimizer'])
+        return checkpoint['epoch'], checkpoint['reward']
 
     #action selection= Function that receives a state and returns an action + logp + value (without gradient)
     def act(self, state):  
