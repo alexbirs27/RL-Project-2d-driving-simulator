@@ -3,8 +3,9 @@ Gymnasium-compatible environment wrapper for the racing game.
 
 This environment can be used by ALL RL algorithms (DQN, PPO, A2C, etc.)
 
-Observation Space (12 values):
+Observation Space (13 values):
     - velocity (normalized)
+    - lateral_velocity (drift, normalized)  # NEW
     - angular velocity approximation
     - on_road flag
     - distance to track center (normalized)
@@ -72,11 +73,11 @@ class RacingEnv(gym.Env):
         # 9 actions: combinations of acceleration/brake with steering
         self.action_space = spaces.Discrete(9)
 
-        # 12 observations
+        # 13 observations (added lateral_velocity for drift)
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(12,),
+            shape=(13,),
             dtype=np.float32
         )
 
@@ -200,8 +201,12 @@ class RacingEnv(gym.Env):
         # Progress
         progress = track.get_progress(current_cp)
 
+        # Normalize lateral velocity (drift)
+        lateral_vel_norm = np.clip(state.lateral_velocity / 100.0, -1, 1)
+
         obs = np.array([
             np.clip(state.velocity / car.max_velocity, -1, 1),          # Velocity normalized
+            lateral_vel_norm,                                            # NEW: Lateral velocity (drift)
             angular_vel_norm,                                            # Angular velocity
             1.0 if state.on_road else -1.0,                             # On road
             dist_to_center_norm,                                         # Distance to center

@@ -32,8 +32,8 @@ class ReplayBuffer:
 # DQN Agent
 class DQNAgent:
     def __init__(self,
-                 state_dim=8,           # State dimension (number of observations)
-                 action_dim=5,          # Number of possible discrete actions
+                 state_dim=13,          # State dimension (number of observations) - NOW WITH DRIFT!
+                 action_dim=9,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters
                  lr=1e-3,               # Learning rate
                  buffer_size=10000,     # Replay buffer capacity

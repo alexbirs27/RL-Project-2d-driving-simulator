@@ -19,7 +19,7 @@ def train(render: bool = False):
     env = make_env(render_mode=render_mode)  # General env: 12 observations, 9 actions
 
     agent = DQNAgent(
-        state_dim=12,
+        state_dim=13,  # Updated for drift physics
         action_dim=9,
         gamma=0.99,
         lr=3e-4,              # Lower learning rate for stability

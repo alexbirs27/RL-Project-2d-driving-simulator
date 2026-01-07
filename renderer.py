@@ -18,6 +18,7 @@ class Renderer:
     CAR_COLOR = (220, 20, 60)
     FINISH_LINE_COLOR = (255, 255, 0)
     TEXT_COLOR = (255, 255, 255)
+    SKID_MARK_COLOR = (20, 20, 20)  # Dark tire marks
 
     def __init__(self, width: int, height: int):
         self.width = width
@@ -50,6 +51,7 @@ class Renderer:
         self.screen.fill(self.GRASS_COLOR)
         self._draw_track(track)
         self._draw_finish_line(track)
+        self._draw_skid_marks(car)  # Draw skid marks before car
         self._draw_car(car)
         self._draw_ui(lap_time, lap_complete, best_time, car)
 
@@ -80,6 +82,30 @@ class Renderer:
 
         start, end = track.get_finish_line_points()
         pygame.draw.line(self.screen, self.FINISH_LINE_COLOR, start, end, 5)
+
+    def _draw_skid_marks(self, car: Car):
+        """Draw skid marks left by drifting."""
+        if self.screen is None or not car.skid_marks:
+            return
+
+        import math
+
+        # Draw dual tire tracks (left and right wheels)
+        for i, (x, y, angle) in enumerate(car.skid_marks):
+            # Fade older marks
+            alpha = int(255 * (i / len(car.skid_marks)))
+            color = (20 + alpha // 10, 20 + alpha // 10, 20 + alpha // 10)
+
+            # Calculate positions for left and right tire marks
+            tire_offset = 8  # Distance from center
+            left_x = x - math.cos(angle) * tire_offset
+            left_y = y - math.sin(angle) * tire_offset
+            right_x = x + math.cos(angle) * tire_offset
+            right_y = y + math.sin(angle) * tire_offset
+
+            # Draw small circles for tire marks
+            pygame.draw.circle(self.screen, color, (int(left_x), int(left_y)), 2)
+            pygame.draw.circle(self.screen, color, (int(right_x), int(right_y)), 2)
 
     def _draw_car(self, car: Car):
         """Draw the car as a rotated rectangle."""
@@ -124,6 +150,13 @@ class Renderer:
         status_color = (0, 255, 0) if car.on_road else (255, 0, 0)
         status_surface = self.font.render(status, True, status_color)
         self.screen.blit(status_surface, (10, 130))
+
+        # Show drift indicator
+        if car.is_drifting:
+            drift_text = "DRIFTING!"
+            drift_color = (255, 165, 0)  # Orange
+            drift_surface = self.font.render(drift_text, True, drift_color)
+            self.screen.blit(drift_surface, (10, 170))
 
         if lap_complete:
             complete_text = f"LAP COMPLETE! Time: {lap_time:.2f}s"
