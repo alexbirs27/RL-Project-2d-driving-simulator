@@ -51,11 +51,9 @@ from typing import Tuple, Dict, Any, Optional
 
 from game import GameEngine, Action
 
+#    Gymnasium environment wrapper for the 2D racing game.
 
 class RacingEnv(gym.Env):
-    """
-    Gymnasium environment wrapper for the 2D racing game.
-    """
 
     metadata = {"render_modes": ["human", None], "render_fps": 60}
 
@@ -107,7 +105,7 @@ class RacingEnv(gym.Env):
         seed: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Reset the environment."""
+        # Reset the environment.
         super().reset(seed=seed)
 
         if not hasattr(self, '_initialized'):
@@ -122,6 +120,7 @@ class RacingEnv(gym.Env):
         self.visited_checkpoints.add(0)
         self.last_angle = self.engine.car.angle
         self.no_progress_steps = 0
+        self._last_dist_to_next = None  # Reset distance tracker
 
         obs = self._get_observation()
         info = self._get_info()
@@ -129,7 +128,7 @@ class RacingEnv(gym.Env):
         return obs, info
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        """Execute one environment step."""
+        # Execute one environment step.
         actions = self.action_map[action]
         state = self.engine.step(actions, self.dt)
         self.current_step += 1
@@ -148,7 +147,7 @@ class RacingEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _get_observation(self) -> np.ndarray:
-        """Convert game state to observation array."""
+        # Convert game state to observation array
         state = self.engine.get_state()
         car = self.engine.car
         track = self.engine.track
@@ -219,7 +218,7 @@ class RacingEnv(gym.Env):
         return obs
 
     def _calculate_reward(self, state, action: int) -> float:
-        """Calculate reward for the current step."""
+        # Calculate reward for the current step
         reward = 0.0
         track = self.engine.track
         car = self.engine.car
@@ -232,7 +231,7 @@ class RacingEnv(gym.Env):
             diff = (current_cp - self.last_checkpoint) % track.num_checkpoints
 
             if diff > 0 and diff < track.num_checkpoints // 2:
-                reward += 15.0 * diff  # Big reward for forward progress
+                reward += 20.0 * diff  # Increased reward for forward progress
                 self.visited_checkpoints.add(current_cp)
                 self.no_progress_steps = 0
             elif diff > track.num_checkpoints // 2:
@@ -244,6 +243,36 @@ class RacingEnv(gym.Env):
 
         self.last_checkpoint = current_cp
 
+        # === NEW: Reward for facing towards next checkpoint ===
+        next_cp = (current_cp + 3) % track.num_checkpoints
+        next_point = track.center_points[next_cp]
+        dx = next_point[0] - state.x
+        dy = next_point[1] - state.y
+        dist_to_next = math.sqrt(dx * dx + dy * dy)
+
+        if dist_to_next > 0:
+            # Direction to next checkpoint (normalized)
+            dir_to_next_x = dx / dist_to_next
+            dir_to_next_y = dy / dist_to_next
+
+            # Car's facing direction
+            car_dir_x = math.sin(state.angle)
+            car_dir_y = -math.cos(state.angle)
+
+            # Alignment: dot product (1 = facing perfectly, -1 = facing away)
+            alignment = dir_to_next_x * car_dir_x + dir_to_next_y * car_dir_y
+
+            # Reward for good alignment (0 to 0.3 based on how well aligned)
+            if alignment > 0:
+                reward += alignment * 0.3
+
+        # Reward for getting closer to next checkpoint ===
+        if self._last_dist_to_next is not None:
+            dist_improvement = self._last_dist_to_next - dist_to_next
+            if dist_improvement > 0:
+                reward += dist_improvement * 0.02  # Small reward for getting closer
+        self._last_dist_to_next = dist_to_next
+
         # Reward for speed (only when on road and moving forward)
         if state.on_road and state.velocity > 0:
             speed_reward = (state.velocity / car.max_velocity) * 1.0
@@ -251,7 +280,7 @@ class RacingEnv(gym.Env):
 
         # Penalty for being off road
         if not state.on_road:
-            reward -= 0.5  # Reduced penalty
+            reward -= 0.5
 
         # Reward for staying on road
         if state.on_road:
@@ -259,7 +288,7 @@ class RacingEnv(gym.Env):
 
         # Penalty for standing still
         if abs(state.velocity) < 5.0:
-            reward -= 0.1  # Reduced penalty
+            reward -= 0.1
 
         # Reward for accelerating (encourage movement)
         if action in [1, 5, 6]:  # Actions with acceleration
@@ -267,16 +296,15 @@ class RacingEnv(gym.Env):
 
         # Big reward for completing lap - faster = better!
         if state.lap_complete:
-            base_reward = 300.0
+            base_reward = 500.0  # Increased base reward
             # Time bonus: faster lap = more reward
-            # At 30 seconds: +700 bonus, at 60 seconds: +400 bonus, at 100+ seconds: +0
             time_bonus = max(0.0, 1000.0 - state.lap_time * 10.0)
             reward += base_reward + time_bonus
 
         return reward
 
     def _check_truncation(self, state) -> bool:
-        """Check if episode should be truncated."""
+        #Check if episode should be truncated
         if self.current_step >= self.max_steps:
             return True
 
@@ -300,7 +328,7 @@ class RacingEnv(gym.Env):
         }
 
     def render(self):
-        """Render the environment."""
+        #Render the environment
         if self.render_mode == "human":
             self.engine.render()
             import pygame
@@ -309,7 +337,6 @@ class RacingEnv(gym.Env):
                     self.close()
 
     def close(self):
-        """Clean up resources."""
         self.engine.quit()
 
 

@@ -13,7 +13,7 @@ def train(render: bool = False):
             
     agent = PPOAgent()
 
-    epochs = 200
+    epochs = 400  # Increased for better learning
     steps_per_epoch = agent.steps_per_epoch
     reward_history = []
     laps_per_epoch = []                     # Track lap completions per epoch
