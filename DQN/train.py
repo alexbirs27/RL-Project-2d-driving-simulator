@@ -32,7 +32,7 @@ def train(render: bool = False):
     )
 
 
-    episodes = 50
+    episodes = 300
     reward_history = []
     lap_completed_history = []  # Track lap completions
     lap_time_history = []       # Track lap times when completed

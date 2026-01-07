@@ -12,8 +12,9 @@ class CarState:
     y: float
     angle: float
     velocity: float
-    lateral_velocity: float  # NEW: Drift velocity
+    lateral_velocity: float  # Drift velocity
     on_road: bool
+    hit_obstacle: bool  # NEW: Did car hit obstacle this step?
     lap_complete: bool
     lap_time: float
 
@@ -184,7 +185,7 @@ class Car:
 
         return rotated
 
-    def get_state(self, lap_complete: bool, lap_time: float) -> CarState:
+    def get_state(self, lap_complete: bool, lap_time: float, hit_obstacle: bool = False) -> CarState:
         """Get the current state of the car."""
         return CarState(
             x=self.x,
@@ -193,6 +194,7 @@ class Car:
             velocity=self.velocity,
             lateral_velocity=self.lateral_velocity,
             on_road=self.on_road,
+            hit_obstacle=hit_obstacle,
             lap_complete=lap_complete,
             lap_time=lap_time
         )

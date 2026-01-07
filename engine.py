@@ -15,7 +15,7 @@ class GameEngine:
     Exposes game state for RL integration.
     """
 
-    def __init__(self, width: int = 1200, height: int = 800, render: bool = True):
+    def __init__(self, width: int = 1600, height: int = 1200, render: bool = True):
         self.width = width
         self.height = height
 
@@ -34,6 +34,7 @@ class GameEngine:
         self.best_time: Optional[float] = None
         self.lap_started = False
         self.visited_checkpoints = set()  # Track visited checkpoints for valid lap completion
+        self.hit_obstacle = False  # Track if obstacle was hit this step
 
         self.running = True
 
@@ -68,12 +69,14 @@ class GameEngine:
             Current car state after the step.
         """
         if self.lap_complete:
-            return self.car.get_state(self.lap_complete, self.lap_time)
+            return self.car.get_state(self.lap_complete, self.lap_time, self.hit_obstacle)
 
         prev_x, prev_y = self.car.x, self.car.y
 
         self.car.update(dt, actions)
 
+        # Reset hit_obstacle before checking
+        self.hit_obstacle = False
         self._check_collisions()
 
         if self.lap_started:
@@ -98,13 +101,16 @@ class GameEngine:
             if self.best_time is None or self.lap_time < self.best_time:
                 self.best_time = self.lap_time
 
-        return self.car.get_state(self.lap_complete, self.lap_time)
+        return self.car.get_state(self.lap_complete, self.lap_time, self.hit_obstacle)
 
     def _check_collisions(self):
         """Check and handle all collisions."""
         corners = self.car.get_corners()
         on_road = all(self.track.is_on_road(x, y) for x, y in corners)
         self.car.on_road = on_road
+
+        # Check obstacle collision
+        self.hit_obstacle = self.track.check_obstacle_collision(self.car.x, self.car.y, car_radius=15)
 
     def render(self):
         """Render the current game state."""
@@ -118,7 +124,7 @@ class GameEngine:
 
     def get_state(self) -> CarState:
         """Get the current game state."""
-        return self.car.get_state(self.lap_complete, self.lap_time)
+        return self.car.get_state(self.lap_complete, self.lap_time, self.hit_obstacle)
 
     def handle_events(self) -> List[Action]:
         """

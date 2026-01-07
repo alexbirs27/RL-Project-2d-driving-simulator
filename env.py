@@ -30,14 +30,14 @@ Action Space (9 discrete actions):
     8: Brake + Turn right
 
 Reward Structure:
-    - +10.0 per new checkpoint visited
-    - +0.5 for speed (when on road)
-    - +0.1 for staying on road
-    - -1.0 for going off road
-    - -0.3 for standing still
-    - +0.05 for accelerating (encourages movement)
-    - +200 + time_bonus for completing lap (faster = better)
-    - -0.05 per step (time penalty)
+    - +20.0 per new checkpoint visited
+    - +1.0 for speed (when on road)
+    - +0.2 for staying on road
+    - -0.5 for going off road
+    - -0.1 for standing still
+    - +0.1 for accelerating (encourages movement)
+    - -50.0 for hitting obstacles (HEAVY PENALTY!)
+    - +500 + time_bonus for completing lap (faster = better)
 
 Usage:
     from env import make_env
@@ -65,8 +65,8 @@ class RacingEnv(gym.Env):
         self.max_steps = max_steps
 
         self.engine = GameEngine(
-            width=1200,
-            height=800,
+            width=1600,
+            height=1200,
             render=(render_mode == "human")
         )
 
@@ -298,6 +298,10 @@ class RacingEnv(gym.Env):
         # Reward for accelerating (encourage movement)
         if action in [1, 5, 6]:  # Actions with acceleration
             reward += 0.1
+
+        # HEAVY penalty for hitting obstacles!
+        if state.hit_obstacle:
+            reward -= 50.0
 
         # Big reward for completing lap - faster = better!
         if state.lap_complete:

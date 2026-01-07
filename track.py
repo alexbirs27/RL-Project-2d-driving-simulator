@@ -13,33 +13,104 @@ class Track:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        self.road_width = 100
+        self.road_width = 100  # Default width
 
-        self.center_points = self._create_oval_track()
+        # Create complex track
+        self.center_points = self._create_complex_track()
         self.num_checkpoints = len(self.center_points)
-        self.start_position = self.center_points[0]
-        self.start_angle = self._calculate_start_angle()
 
-        self.finish_line_start = 0
-        self.finish_line_end = 1
+        # Variable width sections (segment_index: width)
+        self.width_sections = self._create_width_sections()
 
-    def _create_oval_track(self) -> List[Tuple[float, float]]:
-        """Create an oval track with some curves."""
+        # Obstacles (x, y, radius)
+        self.obstacles = self._create_obstacles()
+
+        # Start at point 10 where finish line is (perfectly horizontal)
+        self.start_position = self.center_points[10]
+        self.start_angle = math.pi / 2  # Pointing right (horizontal)
+
+        # Finish line in middle of start straight (perfectly horizontal section)
+        self.finish_line_start = 10
+        self.finish_line_end = 11
+
+    def _create_complex_track(self) -> List[Tuple[float, float]]:
+        """Create a simple rounded rectangle track - clean and smooth."""
         points = []
-        center_x = self.width / 2
-        center_y = self.height / 2
-        radius_x = self.width / 2 - 150
-        radius_y = self.height / 2 - 100
 
-        num_points = 100
-        for i in range(num_points):
-            angle = (2 * math.pi * i) / num_points
-            wobble = 20 * math.sin(4 * angle)
-            x = center_x + (radius_x + wobble) * math.cos(angle)
-            y = center_y + (radius_y + wobble) * math.sin(angle)
+        # Track dimensions
+        center_x = 800
+        center_y = 700
+        width = 500   # Half-width of straight sections
+        height = 350  # Half-height of straight sections
+        corner_radius = 150
+
+        num_points_straight = 15
+        num_points_corner = 18
+
+        # START on bottom straight (left to right) - main straight
+        # Extra long to ensure perfect horizontal start
+        for i in range(25):
+            x = center_x - width + (i * (2 * width) / 25)
+            y = center_y + height
+            points.append((x, y))
+
+        # Bottom-right corner
+        for i in range(1, num_points_corner):
+            angle = (math.pi / 2) * (i / num_points_corner)
+            x = center_x + width + corner_radius * (1 - math.cos(angle))
+            y = center_y + height - corner_radius * math.sin(angle)
+            points.append((x, y))
+
+        # Right straight (bottom to top)
+        for i in range(num_points_straight):
+            x = center_x + width + corner_radius
+            y = center_y + height - corner_radius - (i * (2 * height - 2 * corner_radius) / num_points_straight)
+            points.append((x, y))
+
+        # Top-right corner
+        for i in range(1, num_points_corner):
+            angle = (math.pi / 2) * (i / num_points_corner)
+            x = center_x + width + corner_radius - corner_radius * math.sin(angle)
+            y = center_y - height + corner_radius - corner_radius * (1 - math.cos(angle))
+            points.append((x, y))
+
+        # Top straight (right to left)
+        for i in range(num_points_straight):
+            x = center_x + width - (i * (2 * width) / num_points_straight)
+            y = center_y - height
+            points.append((x, y))
+
+        # Top-left corner
+        for i in range(1, num_points_corner):
+            angle = (math.pi / 2) * (i / num_points_corner)
+            x = center_x - width - corner_radius * (1 - math.cos(angle))
+            y = center_y - height + corner_radius * math.sin(angle)
+            points.append((x, y))
+
+        # Left straight (top to bottom)
+        for i in range(num_points_straight):
+            x = center_x - width - corner_radius
+            y = center_y - height + corner_radius + (i * (2 * height - 2 * corner_radius) / num_points_straight)
+            points.append((x, y))
+
+        # Bottom-left corner
+        for i in range(1, num_points_corner):
+            angle = (math.pi / 2) * (i / num_points_corner)
+            x = center_x - width - corner_radius + corner_radius * math.sin(angle)
+            y = center_y + height - corner_radius + corner_radius * (1 - math.cos(angle))
             points.append((x, y))
 
         return points
+
+    def _create_width_sections(self) -> dict:
+        """Define narrow sections of the track."""
+        # All corners same width - clean and simple
+        return {}
+
+    def _create_obstacles(self) -> List[Tuple[float, float, float]]:
+        """Create obstacles (cones/barriers) placed strategically on track."""
+        # No obstacles - keep it simple and clean
+        return []
 
     def _calculate_start_angle(self) -> float:
         """Calculate the starting angle based on track direction."""
@@ -54,18 +125,35 @@ class Track:
 
         return math.atan2(dx, -dy)
 
+    def get_road_width_at_segment(self, segment_idx: int) -> float:
+        """Get the road width at a specific segment (variable width)."""
+        return self.width_sections.get(segment_idx, self.road_width)
+
     def is_on_road(self, x: float, y: float) -> bool:
-        """Check if a point is on the road."""
+        """Check if a point is on the road (accounts for variable width)."""
         min_dist = float('inf')
+        closest_segment = 0
 
         for i in range(len(self.center_points)):
             p1 = self.center_points[i]
             p2 = self.center_points[(i + 1) % len(self.center_points)]
 
             dist = self._point_to_segment_distance(x, y, p1, p2)
-            min_dist = min(min_dist, dist)
+            if dist < min_dist:
+                min_dist = dist
+                closest_segment = i
 
-        return min_dist <= self.road_width / 2
+        # Get width for the closest segment
+        segment_width = self.get_road_width_at_segment(closest_segment)
+        return min_dist <= segment_width / 2
+
+    def check_obstacle_collision(self, x: float, y: float, car_radius: float = 15) -> bool:
+        """Check if car collides with any obstacle."""
+        for obs_x, obs_y, obs_radius in self.obstacles:
+            dist = math.sqrt((x - obs_x) ** 2 + (y - obs_y) ** 2)
+            if dist < (car_radius + obs_radius):
+                return True
+        return False
 
     def _point_to_segment_distance(
         self,

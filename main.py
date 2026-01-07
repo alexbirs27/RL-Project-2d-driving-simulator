@@ -5,7 +5,7 @@ from engine import GameEngine
 
 def main():
     """Main entry point for the game."""
-    engine = GameEngine(width=1200, height=800, render=True)
+    engine = GameEngine(width=1600, height=1200, render=True)
     engine.init()
 
     clock = pygame.time.Clock()
