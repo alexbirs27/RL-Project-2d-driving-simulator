@@ -18,6 +18,10 @@ def train(render: bool = False):
     reward_history = []
     laps_per_epoch = []                     # Track lap completions per epoch
     best_reward = -float('inf')  # Track best reward for checkpointing
+    lap_completed_history = []
+    lap_time_history = []
+    offroad_steps = []
+
 
     for epoch in range(epochs):
         # Update learning rate (linear decay from initial_lr to 10% of initial)
@@ -39,8 +43,13 @@ def train(render: bool = False):
         for step in range(steps_per_epoch):
 
             action, logp, value = agent.act(state)       # Agent chooses an action + logp + value for the current state
-            next_state, reward, terminated, truncated, _ = env.step(action)  # Apply action in env
+            next_state, reward, terminated, truncated, info = env.step(action)  # Apply action in env
             done = terminated or truncated               # Episode is done if terminated or truncated
+            if not info["on_road"]:
+                offroad_steps.append(1)
+            else:
+                offroad_steps.append(0)
+
 
             observations.append(state)
             actions.append(action)
@@ -60,9 +69,15 @@ def train(render: bool = False):
 
             if done:
                 reward_history.append(ep_reward)
+                #per episode lap completion
+                lap_completed_history.append(1 if terminated else 0)
+                #lap time doar cand a fost tura completa
+                if terminated:
+                    lap_time_history.append(info["lap_time"])
                 state, _ = env.reset()                   # Reset for a new episode
                 ep_reward = 0                            # Reset ep_reward
 
+            
         laps_per_epoch.append(epoch_laps)
 
         # Convert to tensors (prepare data for PyTorch training)
@@ -81,8 +96,19 @@ def train(render: bool = False):
             mean_reward = np.mean(reward_history[-10:])
         else:
             mean_reward = np.mean(reward_history)
+        
+        # afisare log detaliat cu 3 metrici noi sa vad ce pot sa imbunatatesc de la roberta
+        lap_completion_rate = np.mean(lap_completed_history[-100:]) if lap_completed_history else 0.0
+        avg_lap_time = np.mean(lap_time_history[-50:]) if lap_time_history else None
+        offroad_rate = np.mean(offroad_steps[-2000:]) if offroad_steps else 0.0
 
-        print(f"[Epoch {epoch}] Mean Reward (last 10 episodes): {mean_reward:.2f}")
+        print(
+            f"[Epoch {epoch}] "
+            f"Mean Reward (last 10): {mean_reward:.2f} | "
+            f"Lap completion: {lap_completion_rate:.2f} | "
+            f"Avg lap time: {avg_lap_time:.2f} | " if avg_lap_time is not None else "Avg lap time: N/A | "
+            f"Off-road rate: {offroad_rate:.2f}"
+        )
 
         # Save checkpoint if this is the best model so far
         if mean_reward > best_reward:
