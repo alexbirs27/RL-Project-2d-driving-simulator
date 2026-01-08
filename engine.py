@@ -6,6 +6,7 @@ from car import Car, CarState
 from track import Track
 from f1tenth_track import F1TenthTrack
 from renderer import Renderer
+from config import RENDER_WIDTH, RENDER_HEIGHT, RENDER_ZOOM
 
 
 class GameEngine:
@@ -16,9 +17,9 @@ class GameEngine:
     Exposes game state for RL integration.
     """
 
-    def __init__(self, width: int = 1600, height: int = 1200, render: bool = True):
-        self.width = width
-        self.height = height
+    def __init__(self, width: int = None, height: int = None, render: bool = True):
+        self.width = width if width is not None else RENDER_WIDTH
+        self.height = height if height is not None else RENDER_HEIGHT
 
         # Use F1Tenth Spielberg track instead of procedural track
         import os
@@ -26,9 +27,8 @@ class GameEngine:
         csv_path = os.path.join(project_root, "tracks", "Spielberg", "Spielberg_centerline.csv")
 
         self.track = F1TenthTrack(
-            csv_path=csv_path,
-            scale=50.0,       # pixels per meter
-            road_width=100.0  # track width in pixels
+            csv_path=csv_path
+            # scale and road_width loaded from config automatically
         )
         self.car = Car(
             self.track.start_position[0],
@@ -39,7 +39,7 @@ class GameEngine:
         self.car.width = 20
         self.car.length = 14
 
-        self.renderer = Renderer(width, height)
+        self.renderer = Renderer(self.width, self.height)
         self.renderer.enabled = render
 
         self.lap_time = 0.0
@@ -128,7 +128,7 @@ class GameEngine:
     def render(self):
         """Render the current game state."""
         # Set camera to follow car with zoom
-        zoom_level = 1.5  # Adjust zoom for better track visibility
+        zoom_level = RENDER_ZOOM  # From config
         self.renderer.camera_x = self.car.x - (self.renderer.width / zoom_level) // 2
         self.renderer.camera_y = self.car.y - (self.renderer.height / zoom_level) // 2
         self.renderer.zoom = zoom_level

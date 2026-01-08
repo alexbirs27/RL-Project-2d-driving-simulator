@@ -14,9 +14,15 @@ from .agent import PPOAgent
 
 
 # Main Training Loop (collection + update)
-def train(render: bool = False):
-    render_mode = "human" if render else None
-    env = make_env(render_mode=render_mode, max_steps=10000)  # Longer track needs more steps
+def train(render: bool = False, render_freq: int = 1):
+    """
+    Train PPO agent.
+
+    Args:
+        render: Enable rendering
+        render_freq: Render every N epochs (e.g., 5 = render 1 out of 5 epochs)
+    """
+    env = make_env(render_mode=None)  # Create env without rendering initially
 
     agent = PPOAgent()
 
@@ -36,6 +42,13 @@ def train(render: bool = False):
         # Update entropy coefficient (decay for less exploration over time)
         agent.update_entropy_coef(epoch, epochs)
 
+        # Enable rendering for this epoch if it's a render epoch
+        should_render = render and (epoch % render_freq == 0)
+        if should_render:
+            # Recreate env with rendering for this epoch
+            env.close()
+            env = make_env(render_mode="human")
+
         observations = []
         actions = []
         logps = []                          # Log-probabilities of actions under the old policy
@@ -49,7 +62,7 @@ def train(render: bool = False):
 
         for step in range(steps_per_epoch):
             # Handle pygame events to prevent window freeze
-            if render:
+            if should_render:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         print("\nTraining interrupted by user")
@@ -75,7 +88,7 @@ def train(render: bool = False):
             ep_reward += reward
             state = next_state
 
-            if render:
+            if should_render:
                 env.render()
 
             if terminated:                              # Lap completed (not just truncated)
@@ -91,6 +104,10 @@ def train(render: bool = False):
                 state, _ = env.reset()                   # Reset for a new episode
                 ep_reward = 0                            # Reset ep_reward
 
+        # Disable rendering after epoch if it was enabled
+        if should_render and epoch < epochs - 1:
+            env.close()
+            env = make_env(render_mode=None)
 
         laps_per_epoch.append(epoch_laps)
 
@@ -172,5 +189,11 @@ def train(render: bool = False):
 
 if __name__ == "__main__":
     import sys
-    render = "--render" in sys.argv
-    train(render=render)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train PPO agent")
+    parser.add_argument("--render", action="store_true", help="Enable rendering")
+    parser.add_argument("--render-freq", type=int, default=1, help="Render every N epochs (default: 1)")
+    args = parser.parse_args()
+
+    train(render=args.render, render_freq=args.render_freq)

@@ -3,6 +3,7 @@ from typing import Optional
 
 from car import Car
 from track import Track
+from config import RAY_MAX_DISTANCE, RAY_COLORS
 
 
 class Renderer:
@@ -327,16 +328,10 @@ class Renderer:
             -math.pi / 2,     # Left (-90°)
         ]
 
-        ray_colors = [
-            (0, 255, 0),      # Front: GREEN
-            (255, 255, 0),    # Front-right: YELLOW
-            (0, 255, 255),    # Front-left: CYAN
-            (255, 165, 0),    # Right: ORANGE
-            (138, 43, 226),   # Left: PURPLE
-        ]
+        ray_colors = RAY_COLORS  # From config
 
         # Draw 5 distance rays and store normalized distances
-        max_ray_length = 200.0
+        max_ray_length = RAY_MAX_DISTANCE  # From config
         ray_distances = []  # Store normalized distances for display
 
         for i, angle_offset in enumerate(ray_angles_offset):

@@ -11,28 +11,38 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from env import make_env
 from DQN.agent import DQNAgent
+from config import (
+    OBS_DIM, ACTION_DIM, MAX_STEPS_PER_EPISODE,
+    DQN_GAMMA, DQN_LEARNING_RATE, DQN_BUFFER_SIZE, DQN_BATCH_SIZE, DQN_TAU,
+    DQN_EPSILON_START, DQN_EPSILON_END, DQN_EPSILON_DECAY, DQN_TOTAL_EPISODES
+)
 
 
 # Main Training Loop
-def train(render: bool = False):
-    render_mode = "human" if render else None
-    env = make_env(render_mode=render_mode, max_steps=10000)  # Longer track needs more steps
+def train(render: bool = False, render_freq: int = 1):
+    """
+    Train DQN agent.
+
+    Args:
+        render: Enable rendering
+        render_freq: Render every N episodes (e.g., 5 = render 1 out of 5 episodes)
+    """
+    env = make_env(render_mode=None)  # Create env without rendering initially
 
     agent = DQNAgent(
-        state_dim=8,   # Hybrid: 5 rays + centerline distance + centerline angle + velocity
-        action_dim=9,
-        gamma=0.99,
-        lr=1e-4,              # Even lower learning rate for stability
-        buffer_size=30000,    # Larger buffer for longer episodes
-        batch_size=128,        # Larger batch size
-        epsilon_start=1.0,     # Start with full exploration for complex track
-        epsilon_end=0.05,      # Higher minimum - always explore a bit
-        epsilon_decay=20000,   # MUCH slower decay - explore for 200+ episodes
-        tau=0.003              # Slower target network updates
+        state_dim=OBS_DIM,
+        action_dim=ACTION_DIM,
+        gamma=DQN_GAMMA,
+        lr=DQN_LEARNING_RATE,
+        buffer_size=DQN_BUFFER_SIZE,
+        batch_size=DQN_BATCH_SIZE,
+        epsilon_start=DQN_EPSILON_START,
+        epsilon_end=DQN_EPSILON_END,
+        epsilon_decay=DQN_EPSILON_DECAY,
+        tau=DQN_TAU
     )
 
-
-    episodes = 1000  # Increased for longer F1Tenth track
+    episodes = DQN_TOTAL_EPISODES
     reward_history = []
     lap_completed_history = []  # Track lap completions
     lap_time_history = []       # Track lap times when completed
@@ -43,6 +53,13 @@ def train(render: bool = False):
         # Decay learning rate to prevent catastrophic forgetting
         current_lr = agent.update_learning_rate(episode, episodes)
 
+        # Enable rendering for this episode if it's a render episode
+        should_render = render and (episode % render_freq == 0)
+        if should_render:
+            # Recreate env with rendering for this episode
+            env.close()
+            env = make_env(render_mode="human")
+
         state, _ = env.reset()
         ep_reward = 0
         done = False
@@ -52,7 +69,7 @@ def train(render: bool = False):
         while not done:
             ep_steps += 1
             # Handle pygame events to prevent window freeze
-            if render:
+            if should_render:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         print("\nTraining interrupted by user")
@@ -80,8 +97,13 @@ def train(render: bool = False):
             state = next_state
             ep_reward += reward
 
-            if render:
+            if should_render:
                 env.render()
+
+        # Disable rendering after episode if it was enabled
+        if should_render and episode < episodes - 1:
+            env.close()
+            env = make_env(render_mode=None)
 
         # Episode finished
         reward_history.append(ep_reward)
@@ -200,5 +222,11 @@ def train(render: bool = False):
 
 if __name__ == "__main__":
     import sys
-    render = "--render" in sys.argv
-    train(render=render)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train DQN agent")
+    parser.add_argument("--render", action="store_true", help="Enable rendering")
+    parser.add_argument("--render-freq", type=int, default=1, help="Render every N episodes (default: 1)")
+    args = parser.parse_args()
+
+    train(render=args.render, render_freq=args.render_freq)

@@ -4,20 +4,26 @@ Load F1Tenth track from centerline CSV - creates clean procedural track.
 import csv
 import numpy as np
 from typing import List, Tuple
+from config import TRACK_SCALE, TRACK_ROAD_WIDTH, CHECKPOINT_SPACING
 
 
 class F1TenthTrack:
     """Clean track loaded from F1Tenth centerline CSV."""
 
-    def __init__(self, csv_path: str, scale: float = 50.0, road_width: float = 100.0):
+    def __init__(self, csv_path: str, scale: float = None, road_width: float = None):
         """
         Load track from centerline CSV and create clean procedural track.
 
         Args:
             csv_path: Path to centerline CSV file
-            scale: Pixels per meter (higher = bigger track)
-            road_width: Track width in pixels
+            scale: Pixels per meter (from config if None)
+            road_width: Track width in pixels (from config if None)
         """
+        # Use config values if not specified
+        if scale is None:
+            scale = TRACK_SCALE
+        if road_width is None:
+            road_width = TRACK_ROAD_WIDTH
         # Load centerline points from CSV
         # Format: # x_m, y_m, w_tr_right_m, w_tr_left_m
         raw_points = []
@@ -50,24 +56,37 @@ class F1TenthTrack:
             offset_x = -min_x + 200
             offset_y = -min_y + 200
 
-            self.center_points = [(x + offset_x, y + offset_y) for x, y in raw_points]
-            self.track_widths = track_widths  # Actual track widths from CSV
+            # Store ALL centerline points for collision detection and racing line
+            self.all_center_points = [(x + offset_x, y + offset_y) for x, y in raw_points]
+            self.all_track_widths = track_widths  # Actual track widths from CSV
+
+            # Create STRATEGIC CHECKPOINTS (subsample to ~60-80 checkpoints)
+            # This prevents checkpoint exploitation (agent cutting perpendicular to next checkpoint)
+            checkpoint_spacing = max(CHECKPOINT_SPACING, len(self.all_center_points) // 60)
+            self.checkpoints = [self.all_center_points[i]
+                               for i in range(0, len(self.all_center_points), checkpoint_spacing)]
+            self.num_checkpoints = len(self.checkpoints)
+
+            # Keep center_points for backward compatibility with rendering
+            self.center_points = self.all_center_points
 
             # Create a subsampled version for fast collision detection (every 5th point)
-            self.collision_points = [(self.center_points[i], self.track_widths[i])
-                                     for i in range(0, len(self.center_points), 5)]
+            self.collision_points = [(self.all_center_points[i], self.all_track_widths[i])
+                                     for i in range(0, len(self.all_center_points), 5)]
 
             self.width = int(max_x - min_x + 400)
             self.height = int(max_y - min_y + 400)
         else:
-            self.center_points = [(500, 500)]
-            self.track_widths = [road_width]
+            self.all_center_points = [(500, 500)]
+            self.all_track_widths = [road_width]
+            self.center_points = self.all_center_points
+            self.checkpoints = [(500, 500)]
             self.collision_points = [((500, 500), road_width)]
             self.width = 1000
             self.height = 1000
+            self.num_checkpoints = 1
 
         self.road_width = road_width  # Default for rendering
-        self.num_checkpoints = len(self.center_points)
 
         # Start at first point
         if self.center_points:
@@ -89,7 +108,8 @@ class F1TenthTrack:
 
         print(f"Loaded F1Tenth track from CSV")
         print(f"Track size: {self.width}x{self.height}")
-        print(f"Centerline points: {self.num_checkpoints}")
+        print(f"Total centerline points: {len(self.all_center_points) if hasattr(self, 'all_center_points') else len(self.center_points)}")
+        print(f"Strategic checkpoints: {self.num_checkpoints} (subsampled for RL)")
         print(f"Start position: {self.start_position}")
 
     def is_on_road(self, x: float, y: float) -> bool:
@@ -108,17 +128,27 @@ class F1TenthTrack:
         return min_dist <= (nearest_width / 2 * 1.1)
 
     def get_nearest_checkpoint(self, x: float, y: float) -> int:
-        """Find nearest checkpoint index."""
+        """Find nearest checkpoint index (uses strategic checkpoints, not all centerline points)."""
         min_dist = float('inf')
         nearest_idx = 0
 
-        for i, (cx, cy) in enumerate(self.center_points):
+        for i, (cx, cy) in enumerate(self.checkpoints):
             dist = (x - cx) ** 2 + (y - cy) ** 2
             if dist < min_dist:
                 min_dist = dist
                 nearest_idx = i
 
         return nearest_idx
+
+    def get_checkpoint_position(self, checkpoint_idx: int) -> Tuple[float, float]:
+        """Get position of a specific checkpoint."""
+        if 0 <= checkpoint_idx < len(self.checkpoints):
+            return self.checkpoints[checkpoint_idx]
+        return self.start_position
+
+    def get_next_checkpoint(self, current_checkpoint: int) -> int:
+        """Get the next checkpoint index (wraps around)."""
+        return (current_checkpoint + 1) % self.num_checkpoints
 
     def get_progress(self, checkpoint_idx: int) -> float:
         """Get progress around track (0.0 to 1.0)."""
@@ -159,6 +189,6 @@ class F1TenthTrack:
 
     def get_road_width_at_segment(self, segment_idx: int) -> float:
         """Get road width at segment (from CSV data)."""
-        if segment_idx < len(self.track_widths):
-            return self.track_widths[segment_idx]
+        if segment_idx < len(self.all_track_widths):
+            return self.all_track_widths[segment_idx]
         return self.road_width

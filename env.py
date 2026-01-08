@@ -3,18 +3,22 @@ Gymnasium-compatible environment wrapper for the racing game.
 
 This environment can be used by ALL RL algorithms (DQN, PPO, A2C, etc.)
 
-Observation Space (8 values - Hybrid ray + racing line approach):
-    Distance Sensors (5 values):
+Observation Space (10 values - SIMPLIFIED and FOCUSED):
+    Distance Sensors (5 values) - LONGER RAYS (400px):
         1. Front ray distance (normalized 0-1)
         2. Front-right ray (45°, normalized 0-1)
         3. Front-left ray (-45°, normalized 0-1)
         4. Right ray (90°, normalized 0-1)
         5. Left ray (-90°, normalized 0-1)
 
+    Navigation to Next Checkpoint (2 values) - WHERE TO GO:
+        6. Distance to next checkpoint (normalized 0-1, max 600px)
+        7. Angle to next checkpoint (normalized -1 to 1) - tells agent which direction to drive
+
     Racing Line Awareness (3 values):
-        6. Distance to centerline (normalized 0-1): 0=perfect line, 1=track edge
-        7. Angle to centerline (normalized -1 to 1): heading alignment with track
-        8. Velocity (normalized 0-1): current speed
+        8. Distance to centerline (normalized 0-1): 0=perfect line, 1=track edge
+        9. Angle to centerline (normalized -1 to 1): heading alignment with track
+        10. Velocity (normalized 0-1): current speed
 
 Action Space (9 discrete actions):
     0: Nothing
@@ -27,23 +31,22 @@ Action Space (9 discrete actions):
     7: Brake + Turn left
     8: Brake + Turn right
 
-Reward Structure:
-    - +20.0 per new checkpoint visited (forward progress)
-    - +up to 5.0 for reaching checkpoint quickly (speed bonus)
-    - +1.0 for speed (when on road)
-    - +0.2 for staying on road
-    - -0.5 for going off road
-    - -0.1 for standing still
-    - +0.1 for accelerating (encourages movement)
-    - +0.5 for corner speed (maintaining speed through turns)
-    - -0.15 for steering zigzag (encourages smooth racing lines)
-    - +0.3 for controlled drift at high speed (advanced technique)
-    - -50.0 for hitting obstacles (HEAVY PENALTY!)
-    - -100.0 for getting stuck off-road (5+ seconds off-road = early termination)
-    - +500 + time_bonus for completing lap (faster = better)
+Reward Structure (SIMPLIFIED - 5 core components):
+    - +10.0 per new checkpoint visited (forward progress only)
+    - +0.5 for speed (velocity-based, encourages going fast)
+    - +0.3 for staying near centerline (racing line bonus)
+    - -1.0 per step off-road (teaches to stay on track)
+    - +100.0 for completing lap (goal achievement)
+
+Previous issues FIXED:
+    - Removed 15+ conflicting reward components
+    - Removed anticipatory braking reward (was confusing)
+    - Removed drift/corner rewards (too complex)
+    - Removed time-based checkpoint rewards (caused exploitation)
+    - Checkpoint reward only given for FORWARD progress (prevents reverse exploit)
 
 Early Termination:
-    - Episode ends if stuck off-road for 5 seconds (300 steps)
+    - Episode ends if stuck off-road for 10 seconds (600 steps) - allows recovery learning
     - Episode ends if no progress for 500 steps
     - Episode ends after max_steps (default 10000)
 
@@ -59,6 +62,11 @@ from gymnasium import spaces
 from typing import Tuple, Dict, Any, Optional
 
 from game import GameEngine, Action
+from config import (
+    OBS_DIM, RAY_MAX_DISTANCE, CHECKPOINT_NAV_MAX_DISTANCE,
+    MAX_STEPS_PER_EPISODE, NO_PROGRESS_LIMIT, OFFROAD_TRUNCATION_LIMIT,
+    REWARD_CHECKPOINT, REWARD_SPEED, REWARD_CENTERLINE, REWARD_OFFROAD, REWARD_LAP_COMPLETE
+)
 
 #    Gymnasium environment wrapper for the 2D racing game.
 
@@ -66,27 +74,26 @@ class RacingEnv(gym.Env):
 
     metadata = {"render_modes": ["human", None], "render_fps": 60}
 
-    def __init__(self, render_mode: Optional[str] = None, max_steps: int = 3000):
+    def __init__(self, render_mode: Optional[str] = None, max_steps: int = None):
         super().__init__()
 
         self.render_mode = render_mode
-        self.max_steps = max_steps
+        self.max_steps = max_steps if max_steps is not None else MAX_STEPS_PER_EPISODE
 
         self.engine = GameEngine(
-            width=1600,
-            height=1200,
             render=(render_mode == "human")
         )
 
         # 9 actions: combinations of acceleration/brake with steering
         self.action_space = spaces.Discrete(9)
 
-        # 8 observations: Hybrid approach (rays + racing line)
-        # [5 ray distances, dist_to_centerline, angle_to_centerline, velocity]
+        # Observations from config
+        # [5 ray distances, next_checkpoint_distance, angle_to_next_checkpoint,
+        #  dist_to_centerline, angle_to_centerline, velocity]
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(8,),
+            shape=(OBS_DIM,),
             dtype=np.float32
         )
 
@@ -137,12 +144,11 @@ class RacingEnv(gym.Env):
 
         self.current_step = 0
         self.last_checkpoint = 0
+        self.next_checkpoint = 1  # Track the NEXT checkpoint we need to reach
         self.visited_checkpoints = set()
         self.visited_checkpoints.add(0)
         self.no_progress_steps = 0
-        self._last_dist_to_next = None  # Reset distance tracker
         self.last_steering_action = 0  # Reset steering tracker
-        self.checkpoint_times = {0: 0.0}  # Start at checkpoint 0 at time 0
         self.current_time = 0.0  # Reset time
         self.consecutive_offroad_steps = 0  # Reset off-road counter
 
@@ -181,18 +187,21 @@ class RacingEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
-    def _cast_ray(self, x: float, y: float, angle: float, max_distance: float = 200.0) -> float:
+    def _cast_ray(self, x: float, y: float, angle: float, max_distance: float = None) -> float:
         """
         Cast a ray from (x, y) in direction 'angle' and return distance to track edge.
 
         Args:
             x, y: Starting position
             angle: Direction to cast ray (in radians)
-            max_distance: Maximum ray length
+            max_distance: Maximum ray length (from config)
 
         Returns:
             Distance to track edge (normalized 0-1, where 1 = max_distance)
         """
+        if max_distance is None:
+            max_distance = RAY_MAX_DISTANCE
+
         track = self.engine.track
         step_size = 5.0  # Check every 5 pixels
 
@@ -331,16 +340,18 @@ class RacingEnv(gym.Env):
 
     def _get_observation(self) -> np.ndarray:
         """
-        Hybrid observation: rays for collision + centerline for racing line.
+        Improved observation with navigation guidance.
 
-        Returns 8 values:
+        Returns 10 values:
             [front_ray, front_right_ray, front_left_ray, right_ray, left_ray,
+             next_checkpoint_distance, angle_to_next_checkpoint,
              dist_to_centerline, angle_to_centerline, velocity]
         """
         state = self.engine.get_state()
         car = self.engine.car
+        track = self.engine.track
 
-        # === 1-5. Cast 5 rays for collision avoidance ===
+        # === 1-5. Cast 5 rays for collision avoidance (400px range) ===
         ray_angles = [
             0.0,              # Front
             math.pi / 4,      # Front-right (45°)
@@ -352,46 +363,67 @@ class RacingEnv(gym.Env):
         ray_distances = []
         for angle_offset in ray_angles:
             ray_angle = state.angle + angle_offset
-            distance = self._cast_ray(state.x, state.y, ray_angle, max_distance=200.0)
+            distance = self._cast_ray(state.x, state.y, ray_angle)
             ray_distances.append(distance)
 
-        # === 6. Distance to centerline (normalized 0-1) ===
+        # === 6-7. Navigation to NEXT checkpoint (tells agent WHERE TO GO) ===
+        # Get position of next checkpoint
+        next_cp_pos = track.get_checkpoint_position(self.next_checkpoint)
+
+        # Distance to next checkpoint
+        dx = next_cp_pos[0] - state.x
+        dy = next_cp_pos[1] - state.y
+        dist_to_next_cp = math.sqrt(dx * dx + dy * dy)
+        dist_to_next_cp_norm = np.clip(dist_to_next_cp / CHECKPOINT_NAV_MAX_DISTANCE, 0, 1)
+
+        # Angle to next checkpoint (tells agent which direction to turn)
+        angle_to_next_cp = math.atan2(dx, -dy)  # Angle of checkpoint in world
+        angle_diff = angle_to_next_cp - state.angle  # Difference from car's heading
+        # Normalize to [-π, π]
+        while angle_diff > math.pi:
+            angle_diff -= 2 * math.pi
+        while angle_diff < -math.pi:
+            angle_diff += 2 * math.pi
+        angle_to_next_cp_norm = np.clip(angle_diff / math.pi, -1, 1)
+
+        # === 8. Distance to centerline (normalized 0-1) ===
         dist_to_center, nearest_idx = self._get_distance_to_centerline(state.x, state.y)
-        track_half_width = self.engine.track.road_width / 2
+        track_half_width = track.road_width / 2
         dist_to_center_norm = np.clip(dist_to_center / track_half_width, 0, 1)
 
-        # === 7. Angle to centerline (normalized -1 to 1) ===
+        # === 9. Angle to centerline (normalized -1 to 1) ===
         angle_to_center = self._get_angle_to_centerline(state.x, state.y, state.angle, nearest_idx)
         angle_to_center_norm = np.clip(angle_to_center / math.pi, -1, 1)
 
-        # === 8. Velocity (normalized 0-1) ===
+        # === 10. Velocity (normalized 0-1) ===
         velocity_norm = np.clip(abs(state.velocity) / car.max_velocity, 0, 1)
 
         # Construct observation vector
         obs = np.array([
-            ray_distances[0],        # 1. Front ray
-            ray_distances[1],        # 2. Front-right ray
-            ray_distances[2],        # 3. Front-left ray
-            ray_distances[3],        # 4. Right ray
-            ray_distances[4],        # 5. Left ray
-            dist_to_center_norm,     # 6. Distance to centerline
-            angle_to_center_norm,    # 7. Angle to centerline
-            velocity_norm,           # 8. Velocity
+            ray_distances[0],         # 1. Front ray
+            ray_distances[1],         # 2. Front-right ray
+            ray_distances[2],         # 3. Front-left ray
+            ray_distances[3],         # 4. Right ray
+            ray_distances[4],         # 5. Left ray
+            dist_to_next_cp_norm,     # 6. Distance to next checkpoint
+            angle_to_next_cp_norm,    # 7. Angle to next checkpoint
+            dist_to_center_norm,      # 8. Distance to centerline
+            angle_to_center_norm,     # 9. Angle to centerline
+            velocity_norm,            # 10. Velocity
         ], dtype=np.float32)
 
         return obs
 
     def _calculate_reward(self, state, action: int) -> float:
         """
-        Improved reward function with learning signals for braking and recovery.
+        SIMPLIFIED reward function - 5 core components only.
 
-        Core principles:
-        1. Make progress (checkpoints)
-        2. Go fast (speed) - but only when safe
-        3. Brake before corners (anticipatory reward based on front ray)
-        4. Stay on racing line (centerline distance)
-        5. Don't crash (speed-dependent off-road penalty)
-        6. Recover when off-road (gradient toward road)
+        Design philosophy:
+        1. Make forward progress through checkpoints (main goal)
+        2. Go fast (racing is about speed)
+        3. Stay on racing line (optimal path)
+        4. Avoid going off-road (safety)
+        5. Complete the lap (ultimate goal)
         """
         reward = 0.0
         track = self.engine.track
@@ -402,91 +434,47 @@ class RacingEnv(gym.Env):
         # ========================================
         # 1. CHECKPOINT PROGRESS (Primary Goal)
         # ========================================
-        if current_cp not in self.visited_checkpoints:
-            diff = (current_cp - self.last_checkpoint) % track.num_checkpoints
-
-            if diff > 0 and diff < track.num_checkpoints // 2:
-                # Main reward: forward progress
-                reward += 10.0 * diff
-                self.visited_checkpoints.add(current_cp)
-                self.no_progress_steps = 0
-            elif diff > track.num_checkpoints // 2:
-                # Backward movement penalty
-                reward -= 5.0
-                self.no_progress_steps += 1
+        # Only reward if we reached the NEXT checkpoint (prevents reverse exploit)
+        if current_cp == self.next_checkpoint:
+            reward += REWARD_CHECKPOINT
+            self.visited_checkpoints.add(current_cp)
+            self.next_checkpoint = (current_cp + 1) % track.num_checkpoints
+            self.no_progress_steps = 0
         else:
             self.no_progress_steps += 1
 
         self.last_checkpoint = current_cp
 
         # ========================================
-        # 2. SPEED (Go Fast!)
+        # 2. SPEED REWARD (Go Fast!)
         # ========================================
-        # Simple: reward velocity when on road
+        # Simple velocity reward (encourages speed)
         if state.on_road:
-            speed_reward = (abs(state.velocity) / car.max_velocity) * 2.0
+            speed_reward = (abs(state.velocity) / car.max_velocity) * REWARD_SPEED
             reward += speed_reward
 
         # ========================================
-        # 2.5. ANTICIPATORY BRAKING (Slow before walls!)
+        # 3. RACING LINE BONUS
         # ========================================
-        # Get observation to check front ray distance
-        obs = self._get_observation()
-        front_ray = obs[0]  # First value is front ray distance (0-1 normalized)
-
-        # If wall is close ahead and speed is high, reward slowing down
-        if front_ray < 0.4 and state.on_road:  # Wall within 40% of max ray distance
-            speed_norm = abs(state.velocity) / car.max_velocity
-            # Reward lower speed when approaching walls (teaches braking before corners!)
-            anticipation_reward = (1.0 - speed_norm) * (0.4 - front_ray) * 2.0
-            reward += anticipation_reward
-
-        # ========================================
-        # 3. RACING LINE (Stay on optimal path)
-        # ========================================
-        # Get distance to centerline
-        dist_to_center, _ = self._get_distance_to_centerline(state.x, state.y)
-        track_half_width = track.road_width / 2
-
-        # Reward being close to centerline (racing line)
+        # Reward staying near centerline
         if state.on_road:
+            dist_to_center, _ = self._get_distance_to_centerline(state.x, state.y)
+            track_half_width = track.road_width / 2
             # Closer to center = better (0 = perfect, 1 = edge)
             centerline_score = 1.0 - (dist_to_center / track_half_width)
-            reward += centerline_score * 0.5
+            reward += centerline_score * REWARD_CENTERLINE
 
         # ========================================
-        # 4. OFF-ROAD PENALTY (speed-dependent)
+        # 4. OFF-ROAD PENALTY
         # ========================================
         if not state.on_road:
-            # Worse penalty if going off-road at high speed (teaches braking!)
-            speed_factor = abs(state.velocity) / car.max_velocity
-            reward -= 2.0 * (1.0 + speed_factor)  # -2 to -4 depending on speed
-
-            # OFF-ROAD RECOVERY: reward getting closer to road
-            # This creates a gradient that guides the agent back
-            if dist_to_center < track_half_width * 1.5:  # Still somewhat close
-                # Reward being closer to centerline even when off-road
-                recovery_reward = (1.5 - dist_to_center / track_half_width) * 0.3
-                reward += recovery_reward
+            reward += REWARD_OFFROAD  # Note: REWARD_OFFROAD is negative in config
 
         # ========================================
-        # 5. STUCK OFF-ROAD PENALTY
-        # ========================================
-        if self.consecutive_offroad_steps > 290:
-            # About to terminate - heavy penalty
-            reward -= 10.0
-        if self.consecutive_offroad_steps >= 300:
-            # Episode ending due to stuck
-            reward -= 50.0
-
-        # ========================================
-        # 6. LAP COMPLETION BONUS
+        # 5. LAP COMPLETION BONUS
         # ========================================
         if state.lap_complete:
-            # Big reward for finishing + time bonus
-            base_reward = 500.0
-            time_bonus = max(0.0, 500.0 - state.lap_time * 2.0)
-            reward += base_reward + time_bonus
+            reward += REWARD_LAP_COMPLETE
 
         return reward
 
@@ -496,11 +484,11 @@ class RacingEnv(gym.Env):
             return True
 
         # Truncate if no progress for too long
-        if self.no_progress_steps > 500:
+        if self.no_progress_steps > NO_PROGRESS_LIMIT:
             return True
 
-        # Truncate if stuck off-road for 5 seconds (300 steps at 60 FPS)
-        if self.consecutive_offroad_steps > 300:
+        # Truncate if stuck off-road for too long
+        if self.consecutive_offroad_steps > OFFROAD_TRUNCATION_LIMIT:
             return True
 
         return False
@@ -531,7 +519,7 @@ class RacingEnv(gym.Env):
         self.engine.quit()
 
 
-def make_env(render_mode: Optional[str] = None, max_steps: int = 3000):
+def make_env(render_mode: Optional[str] = None, max_steps: int = None):
     """
     Factory function to create the environment.
 

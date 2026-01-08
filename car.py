@@ -3,6 +3,11 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 from actions import Action
+from config import (
+    CAR_WIDTH, CAR_HEIGHT, CAR_MAX_VELOCITY, CAR_ACCELERATION, CAR_BRAKE_FORCE,
+    CAR_FRICTION, CAR_TURN_SPEED, CAR_GRIP_THRESHOLD, CAR_LATERAL_FRICTION,
+    CAR_DRIFT_STRENGTH, CAR_OFFROAD_FRICTION_MULT, CAR_OFFROAD_MAX_VELOCITY
+)
 
 
 @dataclass
@@ -33,22 +38,23 @@ class Car:
         self.velocity = 0.0
         self.lateral_velocity = 0.0  # NEW: Sideways drift velocity
 
-        self.width = 20
-        self.height = 40
+        # Load from config
+        self.width = CAR_WIDTH
+        self.height = CAR_HEIGHT
 
-        self.max_velocity = 350.0
-        self.acceleration = 220.0
-        self.brake_force = 180.0
-        self.friction = 30.0
-        self.turn_speed = 3.0
+        self.max_velocity = CAR_MAX_VELOCITY
+        self.acceleration = CAR_ACCELERATION
+        self.brake_force = CAR_BRAKE_FORCE
+        self.friction = CAR_FRICTION
+        self.turn_speed = CAR_TURN_SPEED
 
-        # RWD drift physics!
-        self.grip_threshold = 150.0   # Speed at which rear loses grip when turning hard (higher = drift at higher speeds only)
-        self.lateral_friction = 120.0  # How quickly drift is reduced (higher = less sliding)
-        self.drift_strength = 5.0     # How much the rear kicks out (lower = less drift)
+        # RWD drift physics from config
+        self.grip_threshold = CAR_GRIP_THRESHOLD
+        self.lateral_friction = CAR_LATERAL_FRICTION
+        self.drift_strength = CAR_DRIFT_STRENGTH
 
-        self.offroad_friction_multiplier = 2.5
-        self.offroad_max_velocity = 60.0
+        self.offroad_friction_multiplier = CAR_OFFROAD_FRICTION_MULT
+        self.offroad_max_velocity = CAR_OFFROAD_MAX_VELOCITY
 
         self.on_road = True
 
