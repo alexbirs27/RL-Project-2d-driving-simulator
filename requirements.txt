@@ -1,0 +1,14 @@
+# Deep Learning & Reinforcement Learning
+torch>=2.0.0
+numpy>=1.24.0
+
+# RL Environment
+gymnasium>=1.0.0
+
+# Visualization & Rendering
+pygame>=2.5.0
+matplotlib>=3.7.0
+Pillow>=10.0.0
+
+# Data Processing
+PyYAML>=6.0
