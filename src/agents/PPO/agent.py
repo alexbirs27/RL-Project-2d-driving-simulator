@@ -7,25 +7,32 @@ from .networks import PolicyNet, ValueNet
 
 
 # PPO Agent
-class PPOAgent:                         
+class PPOAgent:
     def __init__(self,                  # Constructor with PPO hyperparameters
-                 state_dim=8,           # State dimension (how many numbers are in the observation)
-                 action_dim=5,          # Number of possible discrete actions
+                 state_dim=13,          # State dimension (how many numbers are in the observation) - NOW WITH DRIFT!
+                 action_dim=9,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
                  lam=0.95,              # Lambda for GAE: control between bias/variance
                  clip_eps=0.2,          # Epsilon for PPO clipping (how much the policy is allowed to change per update)
-                 lr=3e-4,               # Learning rate: how large the learning steps are
+                 lr=1e-4,               # Learning rate: how large the learning steps are
                  steps_per_epoch=4096,  # How many steps to collect in the environment before an update
                  train_iters=10,        # How many times to pass through the data during update (internal epochs on the collected batch)
-                 minibatch_size=64):    # Minibatch size during training
+                 minibatch_size=64,     # Minibatch size during training
+                 entropy_coef=0.01,    # Entropy bonus coefficient for exploration
+                 max_grad_norm=0.5     # Max gradient norm for clipping (prevents exploding gradients)
+                 ):    
 
         #hyperparametrii
-        self.gamma = gamma             
-        self.lam = lam                 
-        self.clip_eps = clip_eps       
+        self.gamma = gamma
+        self.lam = lam
+        self.clip_eps = clip_eps
         self.steps_per_epoch = steps_per_epoch
-        self.train_iters = train_iters        
-        self.minibatch_size = minibatch_size  
+        self.train_iters = train_iters
+        self.minibatch_size = minibatch_size
+        self.entropy_coef = entropy_coef
+        self.initial_entropy_coef = entropy_coef  # Store initial value for decay
+        self.max_grad_norm = max_grad_norm
+        self.initial_lr = lr  
 
         # actor+critic
         self.policy = PolicyNet(state_dim, action_dim)  # Create actor network: receives state -> produces action logits
@@ -36,7 +43,40 @@ class PPOAgent:
         self.opt_value = optim.Adam(self.value_fn.parameters(), lr=lr) # Optimizer for value function (critic)
 
 
+    def update_learning_rate(self, current_epoch, total_epochs):
+        """Linear decay: lr goes from initial_lr to 10% of initial_lr over training"""
+        progress = current_epoch / total_epochs
+        new_lr = self.initial_lr * (0.1 + 0.9 * (1.0 - progress))  # Floor at 10% of initial LR
 
+        for param_group in self.opt_policy.param_groups:
+            param_group['lr'] = new_lr
+        for param_group in self.opt_value.param_groups:
+            param_group['lr'] = new_lr
+
+    def update_entropy_coef(self, current_epoch, total_epochs):
+        """Decay entropy coefficient from initial value to 10% over training (less exploration over time)"""
+        progress = current_epoch / total_epochs
+        self.entropy_coef = self.initial_entropy_coef * (0.1 + 0.9 * (1.0 - progress))
+
+    def save_checkpoint(self, filepath, epoch, reward):
+        """Save model checkpoint with policy, value network, and training info"""
+        torch.save({
+            'policy_state_dict': self.policy.state_dict(),
+            'value_state_dict': self.value_fn.state_dict(),
+            'policy_optimizer': self.opt_policy.state_dict(),
+            'value_optimizer': self.opt_value.state_dict(),
+            'epoch': epoch,
+            'reward': reward
+        }, filepath)
+
+    def load_checkpoint(self, filepath):
+        """Load model checkpoint"""
+        checkpoint = torch.load(filepath)
+        self.policy.load_state_dict(checkpoint['policy_state_dict'])
+        self.value_fn.load_state_dict(checkpoint['value_state_dict'])
+        self.opt_policy.load_state_dict(checkpoint['policy_optimizer'])
+        self.opt_value.load_state_dict(checkpoint['value_optimizer'])
+        return checkpoint['epoch'], checkpoint['reward']
 
     #action selection= Function that receives a state and returns an action + logp + value (without gradient)
     def act(self, state):  
@@ -145,8 +185,11 @@ class PPOAgent:
                 # Clipped ratio
                 clipped = torch.clamp(ratio, 1 - self.clip_eps, 1 + self.clip_eps)
 
+                #entropy bonus
+                entropy = dist.entropy().mean()
+
                 #Policy loss (PPO clipped objective)
-                policy_loss = -torch.min(ratio * b_adv, clipped * b_adv).mean()
+                policy_loss = -torch.min(ratio * b_adv, clipped * b_adv).mean() - self.entropy_coef * entropy
 
                 #Value loss
                 value_pred = self.value_fn(b_obs).squeeze(-1)  # [B]
@@ -155,9 +198,11 @@ class PPOAgent:
                 #Optimize actor
                 self.opt_policy.zero_grad()
                 policy_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.opt_policy.step()
 
                 #Optimize critic
                 self.opt_value.zero_grad()
                 value_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.value_fn.parameters(), self.max_grad_norm)
                 self.opt_value.step()

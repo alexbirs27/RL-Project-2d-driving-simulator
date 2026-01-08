@@ -16,6 +16,7 @@ class Track:
         self.road_width = 100
 
         self.center_points = self._create_oval_track()
+        self.num_checkpoints = len(self.center_points)
         self.start_position = self.center_points[0]
         self.start_angle = self._calculate_start_angle()
 
@@ -97,12 +98,23 @@ class Track:
         curr_x: float,
         curr_y: float
     ) -> bool:
-        """Check if the car crossed the finish line."""
+        """Check if the car crossed the finish line in the forward direction."""
         p1 = self.center_points[self.finish_line_start]
         p2 = self.center_points[self.finish_line_end]
 
-        direction = (p2[0] - p1[0], p2[1] - p1[1])
-        perpendicular = (-direction[1], direction[0])
+        # Track direction at finish line (forward direction)
+        track_direction = (p2[0] - p1[0], p2[1] - p1[1])
+
+        # Car movement direction
+        car_direction = (curr_x - prev_x, curr_y - prev_y)
+
+        # Check if car is moving in the forward direction (dot product > 0)
+        dot_product = track_direction[0] * car_direction[0] + track_direction[1] * car_direction[1]
+        if dot_product <= 0:
+            # Car is moving backwards - don't count as lap completion
+            return False
+
+        perpendicular = (-track_direction[1], track_direction[0])
         length = math.sqrt(perpendicular[0] ** 2 + perpendicular[1] ** 2)
         if length == 0:
             return False
@@ -154,3 +166,20 @@ class Track:
             (p1[0] + perpendicular[0], p1[1] + perpendicular[1]),
             (p1[0] - perpendicular[0], p1[1] - perpendicular[1])
         )
+
+    def get_nearest_checkpoint(self, x: float, y: float) -> int:
+        """Get the index of the nearest checkpoint to the given position."""
+        min_dist = float('inf')
+        nearest_idx = 0
+
+        for i, point in enumerate(self.center_points):
+            dist = math.sqrt((x - point[0]) ** 2 + (y - point[1]) ** 2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_idx = i
+
+        return nearest_idx
+
+    def get_progress(self, checkpoint: int) -> float:
+        """Get progress as a fraction of the track completed (0.0 to 1.0)."""
+        return checkpoint / self.num_checkpoints

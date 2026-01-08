@@ -33,6 +33,7 @@ class GameEngine:
         self.lap_complete = False
         self.best_time: Optional[float] = None
         self.lap_started = False
+        self.visited_checkpoints = set()  # Track visited checkpoints for valid lap completion
 
         self.running = True
 
@@ -52,6 +53,8 @@ class GameEngine:
         self.lap_time = 0.0
         self.lap_complete = False
         self.lap_started = False
+        self.visited_checkpoints = set()
+        self.visited_checkpoints.add(0)  # Start at checkpoint 0
 
     def step(self, actions: List[Action], dt: float) -> CarState:
         """
@@ -79,9 +82,18 @@ class GameEngine:
         if self.car.velocity > 10:
             self.lap_started = True
 
-        if self.lap_started and self.track.check_finish_line(
-            prev_x, prev_y, self.car.x, self.car.y
-        ):
+        # Track visited checkpoints
+        current_checkpoint = self.track.get_nearest_checkpoint(self.car.x, self.car.y)
+        self.visited_checkpoints.add(current_checkpoint)
+
+        # Only count lap completion if:
+        # 1. Lap has started
+        # 2. Car crosses finish line in forward direction
+        # 3. Car has visited at least 80% of checkpoints (prevents shortcut exploits)
+        min_checkpoints_required = int(self.track.num_checkpoints * 0.8)
+        if (self.lap_started and
+            len(self.visited_checkpoints) >= min_checkpoints_required and
+            self.track.check_finish_line(prev_x, prev_y, self.car.x, self.car.y)):
             self.lap_complete = True
             if self.best_time is None or self.lap_time < self.best_time:
                 self.best_time = self.lap_time
