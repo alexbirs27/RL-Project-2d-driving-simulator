@@ -36,9 +36,9 @@ class Car:
         self.width = 20
         self.height = 40
 
-        self.max_velocity = 240.0
-        self.acceleration = 150.0
-        self.brake_force = 200.0
+        self.max_velocity = 350.0
+        self.acceleration = 220.0
+        self.brake_force = 180.0
         self.friction = 30.0
         self.turn_speed = 3.0
 

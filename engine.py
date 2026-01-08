@@ -4,6 +4,7 @@ from typing import List, Optional
 from actions import Action
 from car import Car, CarState
 from track import Track
+from f1tenth_track import F1TenthTrack
 from renderer import Renderer
 
 
@@ -19,12 +20,24 @@ class GameEngine:
         self.width = width
         self.height = height
 
-        self.track = Track(width, height)
+        # Use F1Tenth Spielberg track instead of procedural track
+        import os
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        csv_path = os.path.join(project_root, "tracks", "Spielberg", "Spielberg_centerline.csv")
+
+        self.track = F1TenthTrack(
+            csv_path=csv_path,
+            scale=50.0,       # pixels per meter
+            road_width=100.0  # track width in pixels
+        )
         self.car = Car(
             self.track.start_position[0],
             self.track.start_position[1],
             self.track.start_angle
         )
+        # Adjust car size for F1Tenth scale
+        self.car.width = 20
+        self.car.length = 14
 
         self.renderer = Renderer(width, height)
         self.renderer.enabled = render
@@ -114,6 +127,12 @@ class GameEngine:
 
     def render(self):
         """Render the current game state."""
+        # Set camera to follow car with zoom
+        zoom_level = 1.5  # Adjust zoom for better track visibility
+        self.renderer.camera_x = self.car.x - (self.renderer.width / zoom_level) // 2
+        self.renderer.camera_y = self.car.y - (self.renderer.height / zoom_level) // 2
+        self.renderer.zoom = zoom_level
+
         self.renderer.render(
             self.car,
             self.track,
@@ -141,6 +160,10 @@ class GameEngine:
                     self.running = False
                 elif event.key == pygame.K_r:
                     self.reset()
+                elif event.key == pygame.K_d:
+                    # Toggle debug visualization
+                    self.renderer.show_debug = not self.renderer.show_debug
+                    print(f"Debug view: {'ON' if self.renderer.show_debug else 'OFF'}")
 
         actions = []
         keys = pygame.key.get_pressed()

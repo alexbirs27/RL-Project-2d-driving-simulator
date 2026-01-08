@@ -16,23 +16,23 @@ from DQN.agent import DQNAgent
 # Main Training Loop
 def train(render: bool = False):
     render_mode = "human" if render else None
-    env = make_env(render_mode=render_mode)  # General env: 12 observations, 9 actions
+    env = make_env(render_mode=render_mode, max_steps=10000)  # Longer track needs more steps
 
     agent = DQNAgent(
-        state_dim=13,  # Updated for drift physics
+        state_dim=8,   # Hybrid: 5 rays + centerline distance + centerline angle + velocity
         action_dim=9,
         gamma=0.99,
-        lr=3e-4,              # Lower learning rate for stability
-        buffer_size=10000,
+        lr=1e-4,              # Even lower learning rate for stability
+        buffer_size=30000,    # Larger buffer for longer episodes
         batch_size=128,        # Larger batch size
-        epsilon_start=0.9,     # Start with less exploration
-        epsilon_end=0.01,
-        epsilon_decay=2500,    # Slower epsilon decay (in steps, not episodes)
-        tau=0.005              # Soft update rate
+        epsilon_start=1.0,     # Start with full exploration for complex track
+        epsilon_end=0.05,      # Higher minimum - always explore a bit
+        epsilon_decay=20000,   # MUCH slower decay - explore for 200+ episodes
+        tau=0.003              # Slower target network updates
     )
 
 
-    episodes = 300
+    episodes = 1000  # Increased for longer F1Tenth track
     reward_history = []
     lap_completed_history = []  # Track lap completions
     lap_time_history = []       # Track lap times when completed
@@ -40,6 +40,9 @@ def train(render: bool = False):
     best_reward = -float('inf') # For checkpointing
 
     for episode in range(episodes):
+        # Decay learning rate to prevent catastrophic forgetting
+        current_lr = agent.update_learning_rate(episode, episodes)
+
         state, _ = env.reset()
         ep_reward = 0
         done = False
@@ -119,7 +122,7 @@ def train(render: bool = False):
         else:
             log_msg += "Avg lap time: N/A | "
 
-        log_msg += f"Off-road: {avg_offroad_rate:.2%} | Epsilon: {epsilon:.3f}"
+        log_msg += f"Off-road: {avg_offroad_rate:.2%} | Epsilon: {epsilon:.3f} | LR: {current_lr:.2e}"
         print(log_msg)
 
         # Save checkpoint if best model

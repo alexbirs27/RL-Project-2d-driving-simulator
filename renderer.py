@@ -15,7 +15,7 @@ class Renderer:
     GRASS_COLOR = (34, 139, 34)
     ROAD_COLOR = (60, 60, 60)
     ROAD_EDGE_COLOR = (255, 255, 255)
-    CAR_COLOR = (220, 20, 60)
+    CAR_COLOR = (255, 0, 0)  # Bright red - easy to see
     FINISH_LINE_COLOR = (255, 255, 0)
     TEXT_COLOR = (255, 255, 255)
     SKID_MARK_COLOR = (20, 20, 20)  # Dark tire marks
@@ -27,22 +27,28 @@ class Renderer:
         self.height = height
         self.screen: Optional[pygame.Surface] = None
         self.font: Optional[pygame.font.Font] = None
+        self.small_font: Optional[pygame.font.Font] = None
         self.enabled = True
         self.camera_x = 0
         self.camera_y = 0
+        self.zoom = 1.0  # Zoom level
+        self.show_debug = True  # Always show rays (toggle with 'D' key)
 
     def init(self):
         """Initialize pygame display."""
         if not self.enabled:
             return
 
-        pygame.display.set_caption("2D Racing Engine")
+        pygame.display.set_caption("2D Racing Engine - Press D for debug view")
         self.screen = pygame.display.set_mode((self.width, self.height))
         self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 20)
 
     def _world_to_screen(self, x: float, y: float) -> tuple:
-        """Convert world coordinates to screen coordinates with camera offset."""
-        return (int(x - self.camera_x), int(y - self.camera_y))
+        """Convert world coordinates to screen coordinates with camera offset and zoom."""
+        screen_x = (x - self.camera_x) * self.zoom
+        screen_y = (y - self.camera_y) * self.zoom
+        return (int(screen_x), int(screen_y))
 
     def render(
         self,
@@ -56,9 +62,8 @@ class Renderer:
         if not self.enabled or self.screen is None:
             return
 
-        # Calculate camera offset to center on car
-        self.camera_x = car.x - self.width // 2
-        self.camera_y = car.y - self.height // 2
+        # Camera is set externally (supports zoom)
+        # Don't recalculate here
 
         self.screen.fill(self.GRASS_COLOR)
         self._draw_track(track)
@@ -66,45 +71,110 @@ class Renderer:
         self._draw_finish_line(track)
         self._draw_skid_marks(car)  # Draw skid marks before car
         self._draw_car(car)
+        if self.show_debug:
+            self._draw_debug_observations(car, track)
         self._draw_ui(lap_time, lap_complete, best_time, car)
+        self._draw_minimap(car, track)  # Draw minimap last (on top)
 
         pygame.display.flip()
 
-    def _draw_track(self, track: Track):
-        """Draw the road surface with variable width sections."""
+    def _draw_track(self, track):
+        """Draw the road surface (supports both procedural and image-based tracks)."""
         if self.screen is None:
             return
 
-        # Draw track segments with variable width
-        for i in range(len(track.center_points)):
-            p1 = track.center_points[i]
-            p2 = track.center_points[(i + 1) % len(track.center_points)]
+        # Check if this is an ImageTrack (has map_array attribute)
+        if hasattr(track, 'map_array'):
+            # Draw PNG track image
+            import numpy as np
+            from PIL import Image
 
-            # Get width for this segment
-            segment_width = track.get_road_width_at_segment(i)
+            # Get visible portion of track (with camera offset and zoom)
+            left = int(self.camera_x)
+            top = int(self.camera_y)
+            right = left + int(self.width / self.zoom)
+            bottom = top + int(self.height / self.zoom)
 
-            # Different color for narrow sections
-            color = self.ROAD_COLOR
-            if segment_width < track.road_width:
-                # Blend yellow tint for narrow sections
-                color = (80, 80, 50)  # Darker yellowish for narrow parts
+            # Clamp to track bounds
+            left = max(0, left)
+            top = max(0, top)
+            right = min(track.width, right)
+            bottom = min(track.height, bottom)
 
-            # Apply camera offset
-            screen_p1 = self._world_to_screen(p1[0], p1[1])
-            screen_p2 = self._world_to_screen(p2[0], p2[1])
-            pygame.draw.line(self.screen, color, screen_p1, screen_p2, int(segment_width))
+            # Extract visible region
+            if right > left and bottom > top:
+                visible_array = track.map_array[top:bottom, left:right]
 
-        # Draw circles at each point with appropriate width
-        for i, point in enumerate(track.center_points):
-            segment_width = track.get_road_width_at_segment(i)
-            color = self.ROAD_COLOR if segment_width >= track.road_width else (80, 80, 50)
-            screen_pos = self._world_to_screen(point[0], point[1])
-            pygame.draw.circle(
-                self.screen,
-                color,
-                screen_pos,
-                int(segment_width // 2)
-            )
+                # Convert to RGB with proper colors:
+                # White pixels (>250) = track (gray), else = grass (green)
+                rgb_array = np.zeros((visible_array.shape[0], visible_array.shape[1], 3), dtype=np.uint8)
+
+                # Create mask for track (white pixels)
+                track_mask = visible_array > 250
+
+                # Track = asphalt gray (lighter)
+                rgb_array[track_mask] = [80, 80, 80]
+
+                # Grass = darker green
+                rgb_array[~track_mask] = [20, 100, 20]
+
+                # Add track edges using numpy (faster)
+                # Dilate and erode to find edges
+                from scipy.ndimage import binary_dilation, binary_erosion
+                try:
+                    dilated = binary_dilation(track_mask)
+                    eroded = binary_erosion(track_mask)
+                    edges = dilated & ~eroded
+                    rgb_array[edges] = [255, 255, 255]  # White edges
+                except:
+                    pass  # Skip edges if scipy not available
+
+                # Convert to pygame surface
+                track_surface = pygame.surfarray.make_surface(np.transpose(rgb_array, (1, 0, 2)))
+
+                # Scale surface if zoomed
+                if self.zoom != 1.0:
+                    new_width = int(track_surface.get_width() * self.zoom)
+                    new_height = int(track_surface.get_height() * self.zoom)
+                    track_surface = pygame.transform.scale(track_surface, (new_width, new_height))
+
+                # Draw at origin (camera offset already applied)
+                screen_x = 0
+                screen_y = 0
+                self.screen.blit(track_surface, (screen_x, screen_y))
+
+        else:
+            # Draw procedural track (original code)
+            # Draw track segments with variable width
+            for i in range(len(track.center_points)):
+                p1 = track.center_points[i]
+                p2 = track.center_points[(i + 1) % len(track.center_points)]
+
+                # Get width for this segment
+                segment_width = track.get_road_width_at_segment(i)
+
+                # Different color for narrow sections
+                color = self.ROAD_COLOR
+                if segment_width < track.road_width:
+                    # Blend yellow tint for narrow sections
+                    color = (80, 80, 50)  # Darker yellowish for narrow parts
+
+                # Apply camera offset
+                screen_p1 = self._world_to_screen(p1[0], p1[1])
+                screen_p2 = self._world_to_screen(p2[0], p2[1])
+                pygame.draw.line(self.screen, color, screen_p1, screen_p2, int(segment_width))
+
+            # Draw circles at each point with appropriate width
+            for i, point in enumerate(track.center_points):
+                segment_width = track.get_road_width_at_segment(i)
+                color = self.ROAD_COLOR if segment_width >= track.road_width else (80, 80, 50)
+                screen_pos = self._world_to_screen(point[0], point[1])
+                pygame.draw.circle(
+                    self.screen,
+                    color,
+                    screen_pos,
+                    int(segment_width // 2)
+                )
 
     def _draw_finish_line(self, track: Track):
         """Draw the finish line."""
@@ -233,3 +303,178 @@ class Renderer:
                 center=(self.width // 2, self.height // 2 + 40)
             )
             self.screen.blit(restart_surface, restart_rect)
+
+    def _draw_debug_observations(self, car: Car, track: Track):
+        """Draw debug visualization of what the agent observes (5-ray system)."""
+        if self.screen is None or self.small_font is None:
+            return
+
+        import math
+
+        # Get car state
+        car_screen = self._world_to_screen(car.x, car.y)
+
+        # Get ray data from environment (if available)
+        # We need to access the environment's ray data
+        # For now, we'll recalculate the rays here for visualization
+
+        # Ray directions (same as in env.py)
+        ray_angles_offset = [
+            0.0,              # Front
+            math.pi / 4,      # Front-right (45°)
+            -math.pi / 4,     # Front-left (-45°)
+            math.pi / 2,      # Right (90°)
+            -math.pi / 2,     # Left (-90°)
+        ]
+
+        ray_colors = [
+            (0, 255, 0),      # Front: GREEN
+            (255, 255, 0),    # Front-right: YELLOW
+            (0, 255, 255),    # Front-left: CYAN
+            (255, 165, 0),    # Right: ORANGE
+            (138, 43, 226),   # Left: PURPLE
+        ]
+
+        # Draw 5 distance rays and store normalized distances
+        max_ray_length = 200.0
+        ray_distances = []  # Store normalized distances for display
+
+        for i, angle_offset in enumerate(ray_angles_offset):
+            ray_angle = car.angle + angle_offset
+
+            # Cast ray to find distance to track edge
+            step_size = 5.0
+            dx = math.sin(ray_angle) * step_size
+            dy = -math.cos(ray_angle) * step_size
+
+            current_x = car.x
+            current_y = car.y
+            distance = 0.0
+
+            # Check if car is currently on road
+            car_on_road = track.is_on_road(car.x, car.y)
+
+            # Find where ray hits track edge (same logic as env.py)
+            while distance < max_ray_length:
+                current_x += dx
+                current_y += dy
+                distance += step_size
+
+                current_on_road = track.is_on_road(current_x, current_y)
+
+                # If car is ON road: detect when ray goes OFF road (track edge)
+                if car_on_road and not current_on_road:
+                    break
+
+                # If car is OFF road: detect when ray goes ON road (distance to track)
+                if not car_on_road and current_on_road:
+                    break
+
+            # Store normalized distance
+            normalized_distance = min(distance / max_ray_length, 1.0)
+            ray_distances.append(normalized_distance)
+
+            # Draw the ray
+            ray_end_screen = self._world_to_screen(current_x, current_y)
+            pygame.draw.line(self.screen, ray_colors[i], car_screen, ray_end_screen, 2)
+
+            # Draw endpoint circle
+            pygame.draw.circle(self.screen, ray_colors[i], ray_end_screen, 4)
+
+        # Draw text panel with 8 hybrid observations
+        panel_x = self.width - 320
+        panel_y = 10
+        panel_width = 310
+        panel_height = 220
+
+        # Semi-transparent background
+        panel_surface = pygame.Surface((panel_width, panel_height))
+        panel_surface.set_alpha(200)
+        panel_surface.fill((0, 0, 0))
+        self.screen.blit(panel_surface, (panel_x, panel_y))
+
+        # Calculate observations for display (simplified version)
+        speed_norm = abs(car.velocity) / car.max_velocity
+
+        # Display observations (matching env.py order)
+        obs_labels = [
+            "HYBRID OBSERVATIONS (8)",
+            "--- Distance Sensors ---",
+            f"1. Front ray: (normalized)",
+            f"2. Front-right (45°): (normalized)",
+            f"3. Front-left (-45°): (normalized)",
+            f"4. Right (90°): (normalized)",
+            f"5. Left (-90°): (normalized)",
+            "--- Racing Line ---",
+            f"6. Dist to centerline: (normalized)",
+            f"7. Angle to centerline: (normalized)",
+            f"8. Velocity: {speed_norm:.2f}",
+        ]
+
+        y_offset = panel_y + 10
+        for i, label in enumerate(obs_labels):
+            if i == 0:
+                color = (255, 255, 0)  # Yellow title
+            elif "---" in label:
+                color = (100, 200, 255)  # Light blue for section headers
+            else:
+                color = (255, 255, 255)  # White for observations
+            text_surface = self.small_font.render(label, True, color)
+            self.screen.blit(text_surface, (panel_x + 5, y_offset))
+            y_offset += 18
+
+        # Legend at bottom
+        legend_y = self.height - 120
+        legend_items = [
+            ("GREEN: Front ray", (0, 255, 0)),
+            ("YELLOW: Front-right", (255, 255, 0)),
+            ("CYAN: Front-left", (0, 255, 255)),
+            ("ORANGE: Right ray", (255, 165, 0)),
+            ("PURPLE: Left ray", (138, 43, 226)),
+        ]
+
+        y_offset = legend_y
+        for text, color in legend_items:
+            text_surface = self.small_font.render(text, True, color)
+            self.screen.blit(text_surface, (10, y_offset))
+            y_offset += 20
+
+    def _draw_minimap(self, car: Car, track: Track):
+        """Draw minimap showing entire track in corner."""
+        if self.screen is None or self.small_font is None:
+            return
+
+        # Minimap settings
+        minimap_size = 200
+        minimap_x = self.width - minimap_size - 10
+        minimap_y = self.height - minimap_size - 10
+
+        # Semi-transparent background
+        minimap_surface = pygame.Surface((minimap_size, minimap_size))
+        minimap_surface.set_alpha(180)
+        minimap_surface.fill((0, 0, 0))
+        self.screen.blit(minimap_surface, (minimap_x, minimap_y))
+
+        # Calculate scale to fit entire track
+        track_width = getattr(track, 'width', 1000)
+        track_height = getattr(track, 'height', 1000)
+        scale = min(minimap_size / track_width, minimap_size / track_height) * 0.9
+
+        # Draw centerline
+        if hasattr(track, 'center_points') and track.center_points:
+            for i in range(len(track.center_points)):
+                p1 = track.center_points[i]
+                p2 = track.center_points[(i + 1) % len(track.center_points)]
+
+                # Scale to minimap coordinates
+                x1 = minimap_x + int(p1[0] * scale)
+                y1 = minimap_y + int(p1[1] * scale)
+                x2 = minimap_x + int(p2[0] * scale)
+                y2 = minimap_y + int(p2[1] * scale)
+
+                pygame.draw.line(self.screen, (100, 100, 100), (x1, y1), (x2, y2), 2)
+
+        # Draw car position
+        car_x = minimap_x + int(car.x * scale)
+        car_y = minimap_y + int(car.y * scale)
+        pygame.draw.circle(self.screen, (255, 0, 0), (car_x, car_y), 3)

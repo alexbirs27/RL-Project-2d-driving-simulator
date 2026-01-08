@@ -32,7 +32,7 @@ class ReplayBuffer:
 # DQN Agent
 class DQNAgent:
     def __init__(self,
-                 state_dim=13,          # State dimension (number of observations) - NOW WITH DRIFT!
+                 state_dim=8,           # State dimension: 5 rays + centerline + velocity
                  action_dim=9,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters
                  lr=1e-3,               # Learning rate
@@ -53,6 +53,7 @@ class DQNAgent:
         self.tau = tau
         self.action_dim = action_dim
         self.steps_done = 0
+        self.initial_lr = lr  # Store initial learning rate for decay
 
         # Q-networks: online (learning) and target (stable targets)
         self.q_network = QNetwork(state_dim, action_dim)      # Online network - updated every step
@@ -158,3 +159,23 @@ class DQNAgent:
     # Deprecated - epsilon now decays automatically in act()
     def decay_epsilon(self):
         pass
+
+    def update_learning_rate(self, current_episode, total_episodes):
+        """
+        Decay learning rate linearly to prevent catastrophic forgetting.
+
+        As training progresses, smaller learning rates help stabilize the policy
+        and prevent large gradient updates from destroying learned behavior.
+
+        Args:
+            current_episode: Current training episode
+            total_episodes: Total number of training episodes
+        """
+        progress = current_episode / total_episodes
+        # Decay from initial_lr to 1% of initial_lr (100x reduction)
+        new_lr = self.initial_lr * (0.01 + 0.99 * (1.0 - progress))
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = new_lr
+
+        return new_lr

@@ -9,7 +9,7 @@ from .networks import PolicyNet, ValueNet
 # PPO Agent
 class PPOAgent:
     def __init__(self,                  # Constructor with PPO hyperparameters
-                 state_dim=13,          # State dimension (how many numbers are in the observation) - NOW WITH DRIFT!
+                 state_dim=8,           # State dimension: 5 rays + centerline + velocity
                  action_dim=9,          # Number of possible discrete actions
                  gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
                  lam=0.95,              # Lambda for GAE: control between bias/variance
