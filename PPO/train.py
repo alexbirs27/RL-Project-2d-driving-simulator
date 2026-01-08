@@ -1,6 +1,13 @@
 import numpy as np                      # for easy work with vectors/matrices and random/shuffle
 import torch                            # framework for neural networks and tensor operations
 import matplotlib.pyplot as plt
+import pygame                           # for handling pygame events during rendering
+
+import sys
+import os
+
+# Add parent directory to path to import general env and agent
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from env import make_env
 from .agent import PPOAgent
@@ -9,8 +16,8 @@ from .agent import PPOAgent
 # Main Training Loop (collection + update)
 def train(render: bool = False):
     render_mode = "human" if render else None
-    env = make_env(render_mode=render_mode)  # DrivingEnv: 8 observations, 5 actions
-            
+    env = make_env(render_mode=render_mode, max_steps=10000)  # Longer track needs more steps
+
     agent = PPOAgent()
 
     epochs = 400  # Increased for better learning
@@ -41,6 +48,13 @@ def train(render: bool = False):
         epoch_laps = 0                      # Count lap completions this epoch
 
         for step in range(steps_per_epoch):
+            # Handle pygame events to prevent window freeze
+            if render:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        print("\nTraining interrupted by user")
+                        env.close()
+                        return agent, reward_history, laps_per_epoch
 
             action, logp, value = agent.act(state)       # Agent chooses an action + logp + value for the current state
             next_state, reward, terminated, truncated, info = env.step(action)  # Apply action in env
@@ -77,7 +91,7 @@ def train(render: bool = False):
                 state, _ = env.reset()                   # Reset for a new episode
                 ep_reward = 0                            # Reset ep_reward
 
-            
+
         laps_per_epoch.append(epoch_laps)
 
         # Convert to tensors (prepare data for PyTorch training)
@@ -96,7 +110,7 @@ def train(render: bool = False):
             mean_reward = np.mean(reward_history[-10:])
         else:
             mean_reward = np.mean(reward_history)
-        
+
         # afisare log detaliat cu 3 metrici noi sa vad ce pot sa imbunatatesc de la roberta
         lap_completion_rate = np.mean(lap_completed_history[-100:]) if lap_completed_history else 0.0
         avg_lap_time = np.mean(lap_time_history[-50:]) if lap_time_history else None
@@ -113,10 +127,10 @@ def train(render: bool = False):
         # Save checkpoint if this is the best model so far
         if mean_reward > best_reward:
             best_reward = mean_reward
-            agent.save_checkpoint('best_model.pt', epoch, mean_reward)
+            agent.save_checkpoint('PPO/best_model.pt', epoch, mean_reward)
             print(f"  -> New best model saved! (reward: {mean_reward:.2f})")
 
-    
+
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=False)
 
     # Top plot: Episode rewards
@@ -143,17 +157,17 @@ def train(render: bool = False):
     ax2.grid(True)
 
     plt.tight_layout()
-    plt.savefig("ppo_training_rewards.png")
+    plt.savefig("PPO/ppo_training_rewards.png")
     plt.show()
 
     # Save final model
     final_reward = np.mean(reward_history[-10:]) if len(reward_history) >= 10 else np.mean(reward_history)
-    agent.save_checkpoint('final_model.pt', epochs - 1, final_reward)
+    agent.save_checkpoint('PPO/final_model.pt', epochs - 1, final_reward)
     print(f"\nTraining complete!")
     print(f"  Best model reward: {best_reward:.2f}")
     print(f"  Final model reward: {final_reward:.2f}")
 
-    return agent, reward_history, laps_per_epoch    
+    return agent, reward_history, laps_per_epoch
 
 
 if __name__ == "__main__":
