@@ -23,7 +23,7 @@ RAY_ANGLES = [
 ]
 
 # Episode limits
-MAX_STEPS_PER_EPISODE = 10000
+MAX_STEPS_PER_EPISODE = 12000
 NO_PROGRESS_LIMIT = 1000  # Steps without checkpoint progress
 OFFROAD_TRUNCATION_LIMIT = 600  # Steps off-road before truncation (10 seconds at 60 FPS)
 
@@ -46,15 +46,15 @@ ACTION_DIM = 9  # 9 discrete actions (nothing, accel, brake, turn L/R, combinati
 
 # Training hyperparameters
 DQN_GAMMA = 0.99              # Discount factor
-DQN_LEARNING_RATE = 1e-4      # Adam learning rate
+DQN_LEARNING_RATE = 5e-5      # Adam learning rate (more conservative for stability)
 DQN_BUFFER_SIZE = 30000       # Replay buffer capacity
 DQN_BATCH_SIZE = 128          # Minibatch size
-DQN_TAU = 0.003               # Soft update rate for target network
+DQN_TAU = 0.005               # Soft update rate for target network (faster target updates)
 
 # Exploration parameters
 DQN_EPSILON_START = 1.0       # Initial exploration rate
-DQN_EPSILON_END = 0.1         # Final exploration rate (higher = more exploration)
-DQN_EPSILON_DECAY = 50000     # Decay steps (higher = slower decay, more exploration)
+DQN_EPSILON_END = 0.05        # Final exploration rate (lower = more exploitation)
+DQN_EPSILON_DECAY = 80000     # Decay steps (higher = slower decay, more exploration)
 
 # Training settings
 DQN_TOTAL_EPISODES = 1000     # Total training episodes
