@@ -11,7 +11,7 @@ class Config:
     ARS_NUM_DELTAS = 16   
 
     # A2C 
-    A2C_EPISODES = 3000
+    A2C_EPISODES = 1000
     LR_A2C = 1e-3
     
     # PPO 
