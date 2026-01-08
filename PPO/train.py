@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from env import make_env
 from .agent import PPOAgent
+from config import OBS_DIM, ACTION_DIM
 
 
 # Main Training Loop (collection + update)
@@ -24,7 +25,7 @@ def train(render: bool = False, render_freq: int = 1):
     """
     env = make_env(render_mode=None)  # Create env without rendering initially
 
-    agent = PPOAgent()
+    agent = PPOAgent(state_dim=OBS_DIM, action_dim=ACTION_DIM)
 
     epochs = 400  # Increased for better learning
     steps_per_epoch = agent.steps_per_epoch
