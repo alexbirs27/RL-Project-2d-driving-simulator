@@ -9,7 +9,7 @@ Change values here instead of hunting through multiple files!
 # ============================================
 
 # Observation space
-OBS_DIM = 10  # 5 rays + 2 checkpoint nav + 3 racing line
+OBS_DIM = 10  # 5 rays + 2 che ckpoint nav + 3 racing line
 RAY_MAX_DISTANCE = 400.0  # Pixels - how far agent can "see"
 CHECKPOINT_NAV_MAX_DISTANCE = 600.0  # Max distance for normalizing checkpoint distance
 
@@ -24,18 +24,18 @@ RAY_ANGLES = [
 
 # Episode limits
 MAX_STEPS_PER_EPISODE = 10000
-NO_PROGRESS_LIMIT = 500  # Steps without checkpoint progress
+NO_PROGRESS_LIMIT = 1000  # Steps without checkpoint progress
 OFFROAD_TRUNCATION_LIMIT = 600  # Steps off-road before truncation (10 seconds at 60 FPS)
 
 # ============================================
 # REWARD FUNCTION WEIGHTS
 # ============================================
 
-REWARD_CHECKPOINT = 10.0      # Per checkpoint reached (forward only)
+REWARD_CHECKPOINT = 50.0      # Per checkpoint reached (forward only)
 REWARD_SPEED = 0.5            # Per step, scaled by velocity
-REWARD_CENTERLINE = 0.3       # Per step, scaled by centerline proximity
-REWARD_OFFROAD = -1.0         # Per step off-road
-REWARD_LAP_COMPLETE = 100.0   # Bonus for finishing lap
+REWARD_CENTERLINE = 0.5       # Per step, scaled by centerline proximity
+REWARD_OFFROAD = -5.0         # Per step off-road
+REWARD_LAP_COMPLETE = 1000.0   # Bonus for finishing lap
 
 # ============================================
 # DQN AGENT HYPERPARAMETERS
@@ -73,12 +73,12 @@ CHECKPOINT_SPACING = 12       # Every Nth point becomes a checkpoint (higher = f
 # CAR PHYSICS PARAMETERS
 # ============================================
 
-CAR_WIDTH = 20
-CAR_HEIGHT = 40
+CAR_WIDTH = 15
+CAR_HEIGHT = 30
 
-CAR_MAX_VELOCITY = 350.0
-CAR_ACCELERATION = 220.0
-CAR_BRAKE_FORCE = 180.0
+CAR_MAX_VELOCITY = 200.0
+CAR_ACCELERATION = 150.0
+CAR_BRAKE_FORCE = 140.0
 CAR_FRICTION = 30.0
 CAR_TURN_SPEED = 3.0
 

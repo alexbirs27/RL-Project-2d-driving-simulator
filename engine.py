@@ -125,7 +125,7 @@ class GameEngine:
         # Check obstacle collision
         self.hit_obstacle = self.track.check_obstacle_collision(self.car.x, self.car.y, car_radius=15)
 
-    def render(self):
+    def render(self, next_checkpoint: int = None, visited_checkpoints: set = None):
         """Render the current game state."""
         # Set camera to follow car with zoom
         zoom_level = RENDER_ZOOM  # From config
@@ -133,12 +133,18 @@ class GameEngine:
         self.renderer.camera_y = self.car.y - (self.renderer.height / zoom_level) // 2
         self.renderer.zoom = zoom_level
 
+        # Use engine's visited_checkpoints if not provided (for main.py manual play)
+        if visited_checkpoints is None:
+            visited_checkpoints = self.visited_checkpoints
+
         self.renderer.render(
             self.car,
             self.track,
             self.lap_time,
             self.lap_complete,
-            self.best_time
+            self.best_time,
+            next_checkpoint,
+            visited_checkpoints
         )
 
     def get_state(self) -> CarState:

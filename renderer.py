@@ -22,6 +22,9 @@ class Renderer:
     SKID_MARK_COLOR = (20, 20, 20)  # Dark tire marks
     OBSTACLE_COLOR = (255, 100, 0)  # Orange cones/barriers
     NARROW_SECTION_COLOR = (255, 200, 0)  # Yellow marking for narrow sections
+    CHECKPOINT_COLOR = (100, 100, 255)  # Blue for checkpoints
+    NEXT_CHECKPOINT_COLOR = (0, 255, 0)  # Green for NEXT checkpoint
+    VISITED_CHECKPOINT_COLOR = (150, 150, 150)  # Gray for visited
 
     def __init__(self, width: int, height: int):
         self.width = width
@@ -57,7 +60,9 @@ class Renderer:
         track: Track,
         lap_time: float,
         lap_complete: bool,
-        best_time: Optional[float]
+        best_time: Optional[float],
+        next_checkpoint: int = None,
+        visited_checkpoints: set = None
     ):
         """Render the complete game state."""
         if not self.enabled or self.screen is None:
@@ -68,6 +73,7 @@ class Renderer:
 
         self.screen.fill(self.GRASS_COLOR)
         self._draw_track(track)
+        self._draw_checkpoints(track, next_checkpoint, visited_checkpoints)  # Draw checkpoints
         self._draw_obstacles(track)  # Draw obstacles
         self._draw_finish_line(track)
         self._draw_skid_marks(car)  # Draw skid marks before car
@@ -176,6 +182,41 @@ class Renderer:
                     screen_pos,
                     int(segment_width // 2)
                 )
+
+    def _draw_checkpoints(self, track, next_checkpoint: int = None, visited_checkpoints: set = None):
+        """Draw all checkpoints on the track."""
+        if self.screen is None:
+            return
+
+        # Only draw if track has checkpoints attribute (F1TenthTrack)
+        if not hasattr(track, 'checkpoints'):
+            return
+
+        visited = visited_checkpoints if visited_checkpoints is not None else set()
+
+        for i, (cx, cy) in enumerate(track.checkpoints):
+            screen_pos = self._world_to_screen(cx, cy)
+
+            # Choose color based on checkpoint status
+            if i == next_checkpoint:
+                # Next checkpoint - GREEN (agent's target)
+                color = self.NEXT_CHECKPOINT_COLOR
+                radius = 8
+            elif i in visited:
+                # Visited checkpoint - GRAY
+                color = self.VISITED_CHECKPOINT_COLOR
+                radius = 4
+            else:
+                # Unvisited checkpoint - BLUE
+                color = self.CHECKPOINT_COLOR
+                radius = 4
+
+            # Draw checkpoint circle
+            pygame.draw.circle(self.screen, color, screen_pos, radius)
+
+            # Draw border for next checkpoint
+            if i == next_checkpoint:
+                pygame.draw.circle(self.screen, (255, 255, 255), screen_pos, radius + 2, 2)
 
     def _draw_finish_line(self, track: Track):
         """Draw the finish line."""

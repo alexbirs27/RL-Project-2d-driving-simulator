@@ -509,7 +509,10 @@ class RacingEnv(gym.Env):
     def render(self):
         #Render the environment
         if self.render_mode == "human":
-            self.engine.render()
+            self.engine.render(
+                next_checkpoint=self.next_checkpoint,
+                visited_checkpoints=self.visited_checkpoints
+            )
             import pygame
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
