@@ -23,7 +23,7 @@ RAY_ANGLES = [
 ]
 
 # Episode limits
-MAX_STEPS_PER_EPISODE = 10000
+MAX_STEPS_PER_EPISODE = 20000
 NO_PROGRESS_LIMIT = 1000  # Steps without checkpoint progress
 OFFROAD_TRUNCATION_LIMIT = 600  # Steps off-road before truncation (10 seconds at 60 FPS)
 
@@ -58,6 +58,23 @@ DQN_EPSILON_DECAY = 50000     # Decay steps (higher = slower decay, more explora
 
 # Training settings
 DQN_TOTAL_EPISODES = 1000     # Total training episodes
+
+# ============================================
+# PPO AGENT HYPERPARAMETERS
+# ============================================
+
+PPO_GAMMA = 0.99              # Discount factor
+PPO_LAMBDA = 0.95             # GAE lambda (bias/variance tradeoff)
+PPO_CLIP_EPS = 0.2            # PPO clipping ratio
+PPO_LEARNING_RATE = 1e-4      # Adam learning rate
+PPO_STEPS_PER_EPOCH = 10000   # Steps to collect before update (must be >= lap length!)
+PPO_TRAIN_ITERS = 10          # Passes through data per update
+PPO_MINIBATCH_SIZE = 128      # Minibatch size
+PPO_ENTROPY_COEF = 0.01       # Entropy bonus for exploration
+PPO_MAX_GRAD_NORM = 0.5       # Gradient clipping
+
+# Training settings
+PPO_TOTAL_EPOCHS = 400        # Total training epochs
 
 # ============================================
 # TRACK CONFIGURATION

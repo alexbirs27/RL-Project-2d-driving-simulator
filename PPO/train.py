@@ -1,17 +1,21 @@
-import numpy as np                      # for easy work with vectors/matrices and random/shuffle
-import torch                            # framework for neural networks and tensor operations
-import matplotlib.pyplot as plt
-import pygame                           # for handling pygame events during rendering
-
 import sys
 import os
-
-# Add parent directory to path to import general env and agent
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import argparse
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import pygame
 
 from env import make_env
 from .agent import PPOAgent
-from config import OBS_DIM, ACTION_DIM
+from config import (
+    OBS_DIM, ACTION_DIM,
+    PPO_GAMMA, PPO_LAMBDA, PPO_CLIP_EPS, PPO_LEARNING_RATE,
+    PPO_STEPS_PER_EPOCH, PPO_TRAIN_ITERS, PPO_MINIBATCH_SIZE,
+    PPO_ENTROPY_COEF, PPO_MAX_GRAD_NORM, PPO_TOTAL_EPOCHS
+)
 
 
 # Main Training Loop (collection + update)
@@ -25,9 +29,21 @@ def train(render: bool = False, render_freq: int = 1):
     """
     env = make_env(render_mode=None)  # Create env without rendering initially
 
-    agent = PPOAgent(state_dim=OBS_DIM, action_dim=ACTION_DIM)
+    agent = PPOAgent(
+        state_dim=OBS_DIM,
+        action_dim=ACTION_DIM,
+        gamma=PPO_GAMMA,
+        lam=PPO_LAMBDA,
+        clip_eps=PPO_CLIP_EPS,
+        lr=PPO_LEARNING_RATE,
+        steps_per_epoch=PPO_STEPS_PER_EPOCH,
+        train_iters=PPO_TRAIN_ITERS,
+        minibatch_size=PPO_MINIBATCH_SIZE,
+        entropy_coef=PPO_ENTROPY_COEF,
+        max_grad_norm=PPO_MAX_GRAD_NORM
+    )
 
-    epochs = 400  # Increased for better learning
+    epochs = PPO_TOTAL_EPOCHS
     steps_per_epoch = agent.steps_per_epoch
     reward_history = []
     laps_per_epoch = []                     # Track lap completions per epoch
@@ -129,18 +145,28 @@ def train(render: bool = False, render_freq: int = 1):
         else:
             mean_reward = np.mean(reward_history)
 
-        # afisare log detaliat cu 3 metrici noi sa vad ce pot sa imbunatatesc de la roberta
+        # Detailed logging (matching DQN format)
         lap_completion_rate = np.mean(lap_completed_history[-100:]) if lap_completed_history else 0.0
         avg_lap_time = np.mean(lap_time_history[-50:]) if lap_time_history else None
         offroad_rate = np.mean(offroad_steps[-2000:]) if offroad_steps else 0.0
 
-        print(
+        last_reward = reward_history[-1] if reward_history else 0
+        log_msg = (
             f"[Epoch {epoch}] "
-            f"Mean Reward (last 10): {mean_reward:.2f} | "
-            f"Lap completion: {lap_completion_rate:.2f} | "
-            f"Avg lap time: {avg_lap_time:.2f} | " if avg_lap_time is not None else "Avg lap time: N/A | "
-            f"Off-road rate: {offroad_rate:.2f}"
+            f"Episodes: {len(reward_history)} | "
+            f"Reward: {last_reward:.2f} | "
+            f"Mean (10): {mean_reward:.2f} | "
+            f"Laps: {epoch_laps} | "
+            f"Lap rate: {lap_completion_rate:.2%} | "
         )
+
+        if avg_lap_time is not None:
+            log_msg += f"Lap time: {avg_lap_time:.2f}s | "
+        else:
+            log_msg += "Lap time: N/A | "
+
+        log_msg += f"Off-road: {offroad_rate:.2%}"
+        print(log_msg)
 
         # Save checkpoint if this is the best model so far
         if mean_reward > best_reward:
@@ -189,12 +215,8 @@ def train(render: bool = False, render_freq: int = 1):
 
 
 if __name__ == "__main__":
-    import sys
-    import argparse
-
     parser = argparse.ArgumentParser(description="Train PPO agent")
     parser.add_argument("--render", action="store_true", help="Enable rendering")
     parser.add_argument("--render-freq", type=int, default=1, help="Render every N epochs (default: 1)")
     args = parser.parse_args()
-
     train(render=args.render, render_freq=args.render_freq)

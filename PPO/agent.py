@@ -8,19 +8,9 @@ from .networks import PolicyNet, ValueNet
 
 # PPO Agent
 class PPOAgent:
-    def __init__(self,                  # Constructor with PPO hyperparameters
-                 state_dim=8,           # State dimension: 5 rays + centerline + velocity
-                 action_dim=9,          # Number of possible discrete actions
-                 gamma=0.99,            # Discount factor: how much the future matters (0.99 = future matters a lot)
-                 lam=0.95,              # Lambda for GAE: control between bias/variance
-                 clip_eps=0.2,          # Epsilon for PPO clipping (how much the policy is allowed to change per update)
-                 lr=1e-4,               # Learning rate: how large the learning steps are
-                 steps_per_epoch=4096,  # How many steps to collect in the environment before an update
-                 train_iters=10,        # How many times to pass through the data during update (internal epochs on the collected batch)
-                 minibatch_size=64,     # Minibatch size during training
-                 entropy_coef=0.01,    # Entropy bonus coefficient for exploration
-                 max_grad_norm=0.5     # Max gradient norm for clipping (prevents exploding gradients)
-                 ):    
+    def __init__(self, state_dim, action_dim, gamma, lam, clip_eps, lr,
+                 steps_per_epoch, train_iters, minibatch_size, entropy_coef, max_grad_norm):
+        # All hyperparameters come from config.py
 
         #hyperparametrii
         self.gamma = gamma
