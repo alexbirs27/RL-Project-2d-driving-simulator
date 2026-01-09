@@ -189,10 +189,15 @@ def train(render: bool = False, render_freq: int = 1):
 
             # REDUCE LEARNING RATE DRAMATICALLY to preserve the working policy
             current_lr = agent.optimizer.param_groups[0]['lr']
-            new_lr = current_lr * 0.01  # 100x reduction to prevent catastrophic forgetting
+            new_lr = current_lr * 0.001  # 1000x reduction to prevent catastrophic forgetting
             for param_group in agent.optimizer.param_groups:
                 param_group['lr'] = new_lr
             print(f"  -> Learning rate reduced {current_lr:.2e} -> {new_lr:.2e} to preserve policy!")
+
+            # FREEZE EPSILON to prevent random exploration from destroying learned policy
+            agent.epsilon_end = 0.01
+            agent.epsilon = 0.01
+            print(f"  -> Epsilon frozen at {agent.epsilon} to prevent random exploration!")
 
     # Plot training performance with multiple metrics
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
