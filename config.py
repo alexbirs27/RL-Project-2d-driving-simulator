@@ -24,8 +24,8 @@ RAY_ANGLES = [
 
 # Episode limits
 MAX_STEPS_PER_EPISODE = 20000
-NO_PROGRESS_LIMIT = 1000  # Steps without checkpoint progress
-OFFROAD_TRUNCATION_LIMIT = 600  # Steps off-road before truncation (10 seconds at 60 FPS)
+NO_PROGRESS_LIMIT = 3000  # Steps without checkpoint progress
+OFFROAD_TRUNCATION_LIMIT = 1000  # Steps off-road before truncation (10 seconds at 60 FPS)
 
 # ============================================
 # REWARD FUNCTION WEIGHTS
@@ -101,7 +101,7 @@ ARS_TOTAL_ITERATIONS = 500    # Total training iterations
 # F1Tenth track loading
 TRACK_SCALE = 50.0            # Pixels per meter
 TRACK_ROAD_WIDTH = 100.0      # Track width in pixels
-CHECKPOINT_SPACING = 12       # Every Nth point becomes a checkpoint (higher = fewer checkpoints)
+CHECKPOINT_SPACING = 6        # Every Nth point becomes a checkpoint (higher = fewer checkpoints) - ~144 checkpoints
 # Result: ~60-72 strategic checkpoints from 864 centerline points
 
 # ============================================

@@ -60,9 +60,9 @@ class F1TenthTrack:
             self.all_center_points = [(x + offset_x, y + offset_y) for x, y in raw_points]
             self.all_track_widths = track_widths  # Actual track widths from CSV
 
-            # Create STRATEGIC CHECKPOINTS (subsample to ~60-80 checkpoints)
+            # Create STRATEGIC CHECKPOINTS (subsample to ~120-144 checkpoints)
             # This prevents checkpoint exploitation (agent cutting perpendicular to next checkpoint)
-            checkpoint_spacing = max(CHECKPOINT_SPACING, len(self.all_center_points) // 60)
+            checkpoint_spacing = max(CHECKPOINT_SPACING, len(self.all_center_points) // 120)
             self.checkpoints = [self.all_center_points[i]
                                for i in range(0, len(self.all_center_points), checkpoint_spacing)]
             self.num_checkpoints = len(self.checkpoints)
