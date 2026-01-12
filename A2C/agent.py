@@ -8,11 +8,15 @@ class A2CAgent:
     def __init__(self, state_dim=8, action_dim=5, lr=1e-3, gamma=0.99, entropy_coef=0.01):
         self.gamma = gamma
         self.entropy_coef = entropy_coef
-        
+
+        # GPU support
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"A2C using device: {self.device}")
+
         # Inițializare rețele
-        self.actor = ActorNet(state_dim, action_dim)
-        self.critic = CriticNet(state_dim)
-        
+        self.actor = ActorNet(state_dim, action_dim).to(self.device)
+        self.critic = CriticNet(state_dim).to(self.device)
+
         # Optimizatoare
         self.opt_actor = optim.Adam(self.actor.parameters(), lr=lr)
         self.opt_critic = optim.Adam(self.critic.parameters(), lr=lr)
@@ -22,23 +26,23 @@ class A2CAgent:
         Primește starea și returnează acțiunea + log_probabilitatea ei.
         Folosit în timpul antrenamentului.
         """
-        state_t = torch.tensor(state, dtype=torch.float32)
-        
+        state_t = torch.tensor(state, dtype=torch.float32).to(self.device)
+
         # Actor
         logits = self.actor(state_t)
         probs = F.softmax(logits, dim=-1)
         dist = torch.distributions.Categorical(probs)
-        
+
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        
+
         return action.item(), log_prob
 
     def select_action(self, state):
         """
         Versiune simplificată doar pentru evaluare (fără gradient).
         """
-        state_t = torch.tensor(state, dtype=torch.float32)
+        state_t = torch.tensor(state, dtype=torch.float32).to(self.device)
         with torch.no_grad():
             logits = self.actor(state_t)
             probs = F.softmax(logits, dim=-1)
@@ -50,13 +54,13 @@ class A2CAgent:
         Aici se întâmplă învățarea (Backpropagation).
         """
         # Convertim totul la tensori
-        rewards_t = torch.tensor(rewards, dtype=torch.float32)
-        log_probs_t = torch.stack(log_probs)
-        states_t = torch.tensor(np.array(states), dtype=torch.float32)
-        
+        rewards_t = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        log_probs_t = torch.stack(log_probs).to(self.device)
+        states_t = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
+
         # 1. Calculăm Discounted Returns (R_t)
         returns = []
-        R = self.critic(torch.tensor(next_state, dtype=torch.float32)).item()
+        R = self.critic(torch.tensor(next_state, dtype=torch.float32).to(self.device)).item()
         
         for r, done in zip(reversed(rewards), reversed(dones)):
             if done:
@@ -64,8 +68,8 @@ class A2CAgent:
             R = r + self.gamma * R
             returns.insert(0, R)
             
-        returns_t = torch.tensor(returns, dtype=torch.float32)
-        
+        returns_t = torch.tensor(returns, dtype=torch.float32).to(self.device)
+
         # Normalizăm returns pentru stabilitate (opțional, dar recomandat)
         returns_t = (returns_t - returns_t.mean()) / (returns_t.std() + 1e-8)
 
@@ -116,7 +120,7 @@ class A2CAgent:
         }, path)
 
     def load(self, path):
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
         self.actor.eval()
