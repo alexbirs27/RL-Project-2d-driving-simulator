@@ -83,13 +83,14 @@ PPO_TOTAL_EPOCHS = 400        # Total training epochs
 A2C_LEARNING_RATE = 1e-3      # Adam learning rate
 A2C_GAMMA = 0.99              # Discount factor
 A2C_ENTROPY_COEF = 0.01       # Entropy bonus for exploration
-A2C_TOTAL_EPISODES = 500      # Total training episodes
+A2C_TOTAL_EPISODES = 2000      # Total training episodes
 
 # ============================================
 # ARS AGENT HYPERPARAMETERS
 # ============================================
 
-ARS_LEARNING_RATE = 0.02      # Step size for weight updates
+
+ARS_LEARNING_RATE = 0.01      # Step size for weight updates
 ARS_NOISE = 0.03              # Perturbation noise scale
 ARS_NUM_DELTAS = 16           # Number of perturbation directions
 ARS_TOTAL_ITERATIONS = 500    # Total training iterations
