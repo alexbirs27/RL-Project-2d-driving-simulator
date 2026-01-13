@@ -1,21 +1,10 @@
 """
-A2C (Advantage Actor-Critic) Training Script
-
-This script trains an A2C agent on the driving environment.
-A2C is a policy gradient algorithm that uses two neural networks:
-- Actor: Learns what action to take in each state
-- Critic: Learns to estimate how good each state is
-
 Training loop:
 1. Run an episode, collecting states, actions, rewards
 2. Compute discounted returns (how much total reward each step led to)
 3. Compute advantages (how much better the action was vs expected)
 4. Update both networks using gradient descent
 
-Usage:
-    python train_a2c.py                     # Train without rendering
-    python train_a2c.py --render            # Train with rendering every episode
-    python train_a2c.py --render --render-freq 10  # Render every 10 episodes
 """
 
 import sys
@@ -25,7 +14,6 @@ import matplotlib.pyplot as plt
 import pygame
 from datetime import datetime
 
-# Setup import paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '..'))
 if project_root not in sys.path:
@@ -36,16 +24,14 @@ from config import *
 from env import make_env
 from A2C.agent import A2CAgent
 
-# === GENERATE UNIQUE TIMESTAMP FOR THIS RUN ===
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 run_name = f"a2c_run_{timestamp}"
 
 print(f"--- NEW RUN: {run_name} ---")
-
-# === SETUP DIRECTORIES ===
-logs_dir = os.path.join(project_root, 'logs')
-models_dir = os.path.join(project_root, 'models')
-plots_dir = os.path.join(project_root, 'plots')
+# Create directories for logs, models, and plots
+logs_dir = os.path.join(current_dir, 'logs')
+models_dir = os.path.join(current_dir, 'models')
+plots_dir = os.path.join(current_dir, 'plots')
 
 os.makedirs(logs_dir, exist_ok=True)
 os.makedirs(models_dir, exist_ok=True)
@@ -61,26 +47,24 @@ best_model_path = os.path.join(models_dir, f'{run_name}_BEST_model.pt')
 
 
 def train_a2c_script(render=False, render_freq=1):
-    """
-    Main training function for A2C agent.
-
-    Args:
-        render: If True, enable visualization during training
-        render_freq: Render every N episodes (e.g., 5 = render 1 out of 5)
-    """
+   
     # Initialize the environment (no rendering by default for faster training)
     env = make_env(render_mode=None)
 
-    # Get dimensions from environment (not hardcoded)
+    # Get dimensions from environment
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
 
+    num_episodes = A2C_TOTAL_EPISODES
+
     # Initialize A2C agent with hyperparameters from config
     print(f"Initializing A2C (state_dim={state_dim}, action_dim={action_dim}, LR={A2C_LEARNING_RATE})...")
-    agent = A2CAgent(state_dim=state_dim, action_dim=action_dim, lr=A2C_LEARNING_RATE)
-
-    # Number of training episodes from config
-    num_episodes = A2C_TOTAL_EPISODES
+    agent = A2CAgent(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        lr=A2C_LEARNING_RATE,
+        total_episodes=num_episodes
+    )
 
     # History for plotting
     history_rewards = []
@@ -104,14 +88,13 @@ def train_a2c_script(render=False, render_freq=1):
         state, _ = env.reset()
         done = False
 
-        # Episode data collection
-        rewards = []       # Rewards at each step
-        log_probs = []     # Log probabilities of actions taken
-        states = []        # States visited
-        dones = []         # Done flags
+        rewards = []     
+        log_probs = []     
+        states = []        
+        dones = []         
 
         total_reward = 0
-        lap_completed = False  # Track if lap was completed this episode
+        lap_completed = False  
 
         # === Run Episode ===
         while not done:
@@ -123,7 +106,7 @@ def train_a2c_script(render=False, render_freq=1):
                         env.close()
                         return
 
-            # Get action from agent (includes exploration via sampling)
+            # Get action from agent 
             action, log_prob = agent.act(state)
 
             # Take step in environment
@@ -151,7 +134,6 @@ def train_a2c_script(render=False, render_freq=1):
             env.close()
             env = make_env(render_mode=None)
 
-        # === Update Agent ===
         # Pass all collected data to the agent for learning
         loss = agent.update(rewards, log_probs, states, dones, next_state)
 
@@ -164,7 +146,6 @@ def train_a2c_script(render=False, render_freq=1):
         if lap_completed:
             total_laps += 1
 
-        # === Save Checkpoint if New Best ===
         # Save model only when it breaks the record
         if total_reward > best_reward:
             best_reward = total_reward
@@ -180,14 +161,10 @@ def train_a2c_script(render=False, render_freq=1):
         with open(log_file, "a") as f:
             f.write(f"{episode+1},{total_reward},{loss},{1 if lap_completed else 0}\n")
 
-    # === Save Final Model ===
-    # Save the final model even if it's not the best (useful for comparison)
+    # Save the final model 
     final_path = os.path.join(models_dir, f'{run_name}_FINAL_model.pt')
     agent.save(final_path)
     print(f"Training complete. Best Reward: {best_reward:.2f} | Total Laps: {total_laps}")
-
-    # === Generate Training Plots ===
-    print("Generating plots...")
 
     # Compute moving average for smoother reward visualization
     window_size = 20
@@ -198,7 +175,6 @@ def train_a2c_script(render=False, render_freq=1):
 
     # Create figure with three subplots
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
-
     # Plot 1: Rewards
     ax1.plot(history_rewards, label='Episode Reward', alpha=0.3, color='blue')
     ax1.plot(range(len(moving_avg)), moving_avg, label=f'Moving Avg ({window_size})', color='red', linewidth=2)

@@ -1,21 +1,9 @@
 """
-ARS (Augmented Random Search) Training Script
-
-This script trains an ARS agent on the driving environment.
-ARS is a gradient-free algorithm that explores by adding random noise
-to policy weights and comparing the performance of positive vs negative
-perturbations.
-
 Training loop:
 1. Generate random perturbations (deltas)
 2. For each delta, run two episodes: one with +delta, one with -delta
 3. Compare rewards and update weights toward better directions
 4. Repeat for many iterations
-
-Usage:
-    python train_ars.py                     # Train without rendering
-    python train_ars.py --render            # Train with rendering every iteration
-    python train_ars.py --render --render-freq 5  # Render every 5 iterations
 """
 
 import sys
@@ -25,7 +13,6 @@ import matplotlib.pyplot as plt
 import pygame
 from datetime import datetime
 
-# Setup import paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '..'))
 if project_root not in sys.path:
@@ -36,38 +23,29 @@ from config import *
 from env import make_env
 from ARS.agent import ARSAgent
 
-# === GENERATE UNIQUE TIMESTAMP FOR THIS RUN ===
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 run_name = f"ars_run_{timestamp}"
 
 print(f"--- NEW RUN: {run_name} ---")
 
-# === SETUP DIRECTORIES ===
-logs_dir = os.path.join(project_root, 'logs')
-models_dir = os.path.join(project_root, 'models')
-plots_dir = os.path.join(project_root, 'plots')
+logs_dir = os.path.join(current_dir, 'logs')
+models_dir = os.path.join(current_dir, 'models')
+plots_dir = os.path.join(current_dir, 'plots')
 
 os.makedirs(logs_dir, exist_ok=True)
 os.makedirs(models_dir, exist_ok=True)
 os.makedirs(plots_dir, exist_ok=True)
 
-# Unique log file for this run
 log_file = os.path.join(logs_dir, f"{run_name}_log.csv")
 with open(log_file, "w") as f:
     f.write("iteration,avg_reward,max_reward,laps\n")
 
-# Path for saving the best model
-best_model_path = os.path.join(models_dir, f'{run_name}_BEST_weights.npy')
+# Path for saving the best model (using .npz for full checkpoint)
+best_model_path = os.path.join(models_dir, f'{run_name}_BEST_weights.npz')
 
 
 def train_ars_script(render=False, render_freq=1):
-    """
-    Main training function for ARS agent.
-
-    Args:
-        render: If True, enable visualization during training
-        render_freq: Render every N iterations (e.g., 5 = render 1 out of 5)
-    """
+   
     # Initialize the environment (no rendering by default for faster training)
     env = make_env(render_mode=None)
 
@@ -75,21 +53,28 @@ def train_ars_script(render=False, render_freq=1):
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
 
-    # Initialize the ARS agent with hyperparameters from config
-    print(f"Initializing ARS (state_dim={state_dim}, action_dim={action_dim}, StepSize={ARS_LEARNING_RATE})...")
-    agent = ARSAgent(state_dim=state_dim, action_dim=action_dim, learning_rate=ARS_LEARNING_RATE)
-
-    # Number of training iterations from config
     num_iterations = ARS_TOTAL_ITERATIONS
 
-    # History for plotting
+    # Initialize the ARS agent with hyperparameters from config
+    # top_k = num_deltas // 2 is a common choice (use best half of directions)
+    print(f"Initializing ARS (state_dim={state_dim}, action_dim={action_dim}, StepSize={ARS_LEARNING_RATE})...")
+    agent = ARSAgent(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        learning_rate=ARS_LEARNING_RATE,
+        num_deltas=16,
+        top_k=8,  # Use best 8 out of 16 deltas
+        total_iterations=num_iterations,
+        normalize_states=True
+    )
+
     history_avg_reward = []
     history_max_reward = []
     history_laps = []
 
     # Track best performance for checkpoint saving
     best_reward = -float('inf')
-    total_laps = 0  # Total laps across all training
+    total_laps = 0 
 
     print(f"--- Starting ARS Training ({num_iterations} iterations) ---")
 
@@ -100,14 +85,12 @@ def train_ars_script(render=False, render_freq=1):
             env.close()
             env = make_env(render_mode="human")
 
-        # === Step 1: Generate Random Perturbations ===
         # Each delta is a random matrix with the same shape as the policy weights
         deltas = [np.random.randn(*agent.weights.shape) for _ in range(agent.num_deltas)]
         rollouts = []
         rewards_list = []
-        iteration_laps = 0  # Laps completed in this iteration
-
-        # === Step 2: Evaluate Each Perturbation (+ and -) ===
+        iteration_laps = 0  
+        
         for delta in deltas:
             # Run episode with weights + noise*delta
             r_pos, lap_pos = run_episode(env, agent, delta, direction="plus", should_render=should_render)
@@ -128,7 +111,7 @@ def train_ars_script(render=False, render_freq=1):
             env.close()
             env = make_env(render_mode=None)
 
-        # === Step 3: Update Agent Weights ===
+        
         # Compute standard deviation of rewards for normalization
         sigma_r = np.std(rewards_list) if np.std(rewards_list) > 0 else 1
         agent.update(rollouts, sigma_r)
@@ -142,11 +125,11 @@ def train_ars_script(render=False, render_freq=1):
         history_laps.append(iteration_laps)
         total_laps += iteration_laps
 
-        # === Save Checkpoint if New Best ===
-        # For ARS, we track the maximum reward found in any direction
+        
+        # Tracking the maximum reward found in any direction
         if max_reward > best_reward:
             best_reward = max_reward
-            np.save(best_model_path, agent.weights)
+            agent.save(best_model_path)
             print(f"!!! NEW RECORD: {best_reward:.2f} -> Model saved.")
 
         # Progress logging
@@ -156,13 +139,12 @@ def train_ars_script(render=False, render_freq=1):
         with open(log_file, "a") as f:
             f.write(f"{i+1},{avg_reward},{max_reward},{iteration_laps}\n")
 
-    # === Save Final Model ===
-    final_path = os.path.join(models_dir, f'{run_name}_FINAL_weights.npy')
-    np.save(final_path, agent.weights)
+    # Saving final model
+    final_path = os.path.join(models_dir, f'{run_name}_FINAL_weights.npz')
+    agent.save(final_path)
     print(f"Training complete. Best Reward: {best_reward:.2f} | Total Laps: {total_laps}")
     print(f"Final model saved to: {final_path}")
 
-    # === Generate Training Plot ===
     print("Generating plot...")
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
@@ -193,20 +175,7 @@ def train_ars_script(render=False, render_freq=1):
 
 
 def run_episode(env, agent, delta, direction, should_render=False):
-    """
-    Run a single episode with the given perturbation.
-
-    Args:
-        env: The gym environment
-        agent: The ARS agent
-        delta: Random perturbation matrix
-        direction: "plus" or "minus" - which direction to perturb weights
-        should_render: If True, render the episode
-
-    Returns:
-        total_reward: Sum of rewards collected during the episode
-        lap_completed: Whether the agent completed a lap
-    """
+   
     state, _ = env.reset()
     total_reward = 0
     done = False
@@ -226,13 +195,14 @@ def run_episode(env, agent, delta, direction, should_render=False):
                     return total_reward, lap_completed
 
         # Select action using perturbed weights
-        action = agent.select_action(state, delta, direction)
+        # update_stats=True to build normalization statistics during training
+        action = agent.select_action(state, delta, direction, update_stats=True)
         state, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         total_reward += reward
         steps += 1
 
-        # Check if lap was completed (terminated means lap complete)
+        # Check if lap was completed 
         if terminated and info.get('lap_complete', False):
             lap_completed = True
 

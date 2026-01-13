@@ -1,21 +1,3 @@
-"""
-A2C (Advantage Actor-Critic) Agent
-
-A policy gradient reinforcement learning algorithm that uses:
-1. Actor: Neural network that learns the policy (what action to take)
-2. Critic: Neural network that estimates state values (how good a state is)
-
-Key concepts:
-- Advantage = Actual Return - Estimated Value
-  If positive: action was better than expected -> increase probability
-  If negative: action was worse than expected -> decrease probability
-
-- The advantage reduces variance in policy gradient updates compared
-  to using raw returns, leading to more stable training.
-
-Reference: Mnih et al. (2016) - "Asynchronous Methods for Deep Reinforcement Learning"
-"""
-
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -24,28 +6,25 @@ from .networks import ActorNet, CriticNet
 
 
 class A2CAgent:
-    """
-    Advantage Actor-Critic agent with separate actor and critic networks.
 
-    The actor outputs action probabilities, the critic outputs state values.
-    Both are trained together to maximize expected cumulative reward.
-    """
+    def __init__(self, state_dim=8, action_dim=5, lr=1e-3, gamma=0.99, entropy_coef=0.01,
+                 gae_lambda=0.95, total_episodes=2000):
+    
+        # Initialize the agent
 
-    def __init__(self, state_dim=8, action_dim=5, lr=1e-3, gamma=0.99, entropy_coef=0.01):
-        """
-        Initialize the A2C agent.
-
-        Args:
-            state_dim: Number of features in the observation (e.g., 10)
-            action_dim: Number of possible actions (e.g., 9)
-            lr: Learning rate for both actor and critic optimizers
-            gamma: Discount factor for future rewards (0.99 = long-term focus)
-            entropy_coef: Weight for entropy bonus (encourages exploration)
-        """
         self.gamma = gamma
-        self.entropy_coef = entropy_coef
+        self.gae_lambda = gae_lambda
+        self.total_episodes = total_episodes
 
-        # GPU support - automatically use CUDA if available
+        # Initial hyperparameters
+        self.initial_lr = lr
+        self.initial_entropy_coef = entropy_coef
+        self.current_lr = lr
+        self.current_entropy_coef = entropy_coef
+
+        # Track current episode for decay scheduling
+        self.current_episode = 0
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"A2C using device: {self.device}")
 
@@ -54,25 +33,33 @@ class A2CAgent:
         self.critic = CriticNet(state_dim).to(self.device)
 
         # Separate optimizers for actor and critic
-        # This allows different learning dynamics if needed
         self.opt_actor = optim.Adam(self.actor.parameters(), lr=lr)
         self.opt_critic = optim.Adam(self.critic.parameters(), lr=lr)
 
+    def _update_learning_rate(self):
+        
+        # Update learning rate with linear decay.
+
+        progress = min(self.current_episode / self.total_episodes, 1.0)
+        # Linear decay to 10% of initial value
+        self.current_lr = self.initial_lr * (1.0 - 0.9 * progress)
+
+        # Update optimizer learning rates
+        for param_group in self.opt_actor.param_groups:
+            param_group['lr'] = self.current_lr
+        for param_group in self.opt_critic.param_groups:
+            param_group['lr'] = self.current_lr
+
+    def _update_entropy_coef(self):
+        
+        # Update entropy coefficient with linear decay.
+        progress = min(self.current_episode / self.total_episodes, 1.0)
+        self.current_entropy_coef = self.initial_entropy_coef * (1.0 - 0.9 * progress)
+
     def act(self, state):
-        """
-        Select an action during training (with exploration).
+        
+        # Select an action during training
 
-        Uses the actor network to get action probabilities, then samples
-        from that distribution. Returns both the action and its log probability
-        (needed for the policy gradient update).
-
-        Args:
-            state: Current observation array of shape (state_dim,)
-
-        Returns:
-            action: Integer index of the selected action
-            log_prob: Log probability of the selected action (for training)
-        """
         # Convert numpy array to PyTorch tensor
         state_t = torch.tensor(state, dtype=torch.float32).to(self.device)
 
@@ -90,18 +77,8 @@ class A2CAgent:
         return action.item(), log_prob
 
     def select_action(self, state):
-        """
-        Select an action during evaluation (deterministic, no exploration).
+        # Select an action during evaluation (no exploration)
 
-        Uses the actor network to get action probabilities, then picks
-        the action with the highest probability (greedy selection).
-
-        Args:
-            state: Current observation array of shape (state_dim,)
-
-        Returns:
-            action: Integer index of the best action
-        """
         state_t = torch.tensor(state, dtype=torch.float32).to(self.device)
 
         # No gradient computation needed during evaluation
@@ -112,80 +89,81 @@ class A2CAgent:
 
         return action
 
+    def compute_gae(self, rewards, values, dones, next_value):
+        """
+        Compute Generalized Advantage Estimation (GAE).
+
+        GAE formula: A_t = sum_{l=0}^{inf} (gamma * lambda)^l * delta_{t+l}
+        where delta_t = r_t + gamma * V(s_{t+1}) - V(s_t)
+
+        """
+        advantages = []
+        gae = 0
+
+        # Convert values to list for easier indexing
+        values_list = values.detach().cpu().numpy().flatten().tolist()
+        values_list.append(next_value)
+
+        # Compute GAE backwards through the episode
+        for t in reversed(range(len(rewards))):
+            if dones[t]:
+                delta = rewards[t] - values_list[t]
+                gae = delta  # Reset GAE at episode boundaries
+            else:
+                delta = rewards[t] + self.gamma * values_list[t + 1] - values_list[t]
+                gae = delta + self.gamma * self.gae_lambda * gae
+
+            advantages.insert(0, gae)
+
+        advantages = torch.tensor(advantages, dtype=torch.float32).to(self.device)
+        returns = advantages + values.squeeze()
+
+        return advantages, returns
+
     def update(self, rewards, log_probs, states, dones, next_state):
-        """
-        Update both actor and critic networks using collected experience.
+        # Update both actor and critic networks using collected experience.
+        
+        # Update decay schedules
+        self._update_learning_rate()
+        self._update_entropy_coef()
+        self.current_episode += 1
 
-        This is where the actual learning happens (backpropagation).
-
-        Args:
-            rewards: List of rewards received at each step
-            log_probs: List of log probabilities of actions taken
-            states: List of states visited
-            dones: List of done flags (True if episode ended)
-            next_state: The final state reached
-
-        Returns:
-            total_loss: Combined loss value for logging
-        """
         # Convert lists to tensors
-        rewards_t = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         log_probs_t = torch.stack(log_probs).to(self.device)
         states_t = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
 
-        # === Step 1: Compute Discounted Returns (R_t) ===
-        # Returns are computed backwards from the last state
-        # R_t = r_t + gamma * R_{t+1}
-        returns = []
-
-        # Bootstrap from the value of the last state (unless episode ended)
-        R = self.critic(torch.tensor(next_state, dtype=torch.float32).to(self.device)).item()
-
-        # Work backwards through the episode
-        for r, done in zip(reversed(rewards), reversed(dones)):
-            if done:
-                R = 0  # Reset return at episode boundaries
-            R = r + self.gamma * R
-            returns.insert(0, R)
-
-        returns_t = torch.tensor(returns, dtype=torch.float32).to(self.device)
-
-        # Normalize returns for training stability
-        # This keeps the gradient magnitudes consistent across episodes
-        returns_t = (returns_t - returns_t.mean()) / (returns_t.std() + 1e-8)
-
-        # === Step 2: Compute Value Estimates V(s) ===
-        # The critic predicts how good each state is
+        # Compute Value Estimates V(s)
         values = self.critic(states_t).squeeze()
 
-        # === Step 3: Compute Advantage ===
-        # Advantage = Actual Return - Predicted Value
-        # Tells us if the action was better or worse than expected
-        advantage = returns_t - values
+        # Get value of the next state for bootstrapping
+        with torch.no_grad():
+            next_value = self.critic(
+                torch.tensor(next_state, dtype=torch.float32).to(self.device)
+            ).item()
 
-        # === Step 4: Compute Losses ===
+        # Compute GAE Advantages and Returns
+        advantages, returns = self.compute_gae(rewards, values, dones, next_value)
 
-        # Critic Loss: Mean Squared Error between predicted and actual returns
-        # We want V(s) to accurately predict the returns
-        critic_loss = F.mse_loss(values, returns_t)
+        # Normalize advantages for training stability
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # Actor Loss: Policy gradient with advantage
+        # Compute Losses
+
+        # Critic Loss
+        critic_loss = F.mse_loss(values, returns.detach())
+
+        # Actor Loss
         # Negative because we want to MAXIMIZE reward (gradient ascent)
-        # advantage.detach() prevents gradients from flowing through the critic
-        actor_loss = -(log_probs_t * advantage.detach()).mean()
+        actor_loss = -(log_probs_t * advantages.detach()).mean()
 
-        # Entropy Loss: Encourages exploration by penalizing certainty
-        # Higher entropy = more uniform action distribution = more exploration
+        # Entropy Loss
         logits = self.actor(states_t)
         probs = F.softmax(logits, dim=-1)
         dist = torch.distributions.Categorical(probs)
-        entropy_loss = -dist.entropy().mean()  # Negative because we want to maximize entropy
+        entropy_loss = -dist.entropy().mean()
+        total_loss = actor_loss + 0.5 * critic_loss + self.current_entropy_coef * entropy_loss
 
-        # Combine all losses
-        # 0.5 weight on critic loss is a common choice
-        total_loss = actor_loss + 0.5 * critic_loss + self.entropy_coef * entropy_loss
-
-        # === Step 5: Backpropagation ===
+        # Backpropagation
 
         # Zero out old gradients
         self.opt_actor.zero_grad()
@@ -195,7 +173,6 @@ class A2CAgent:
         total_loss.backward()
 
         # Gradient clipping for stability
-        # Prevents exploding gradients that can destabilize training
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
 
@@ -206,27 +183,30 @@ class A2CAgent:
         return total_loss.item()
 
     def save(self, path):
-        """
-        Save both actor and critic networks to a file.
+        
+        # Save both actor and critic networks
 
-        Args:
-            path: File path to save the model checkpoint
-        """
         torch.save({
             'actor': self.actor.state_dict(),
-            'critic': self.critic.state_dict()
+            'critic': self.critic.state_dict(),
+            'current_episode': self.current_episode,
+            'current_lr': self.current_lr,
+            'current_entropy_coef': self.current_entropy_coef
         }, path)
 
     def load(self, path):
-        """
-        Load actor and critic networks from a file.
-
-        Args:
-            path: File path to load the model checkpoint from
-        """
+        # Load actor and critic networks
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
+
+        # Restore training state if available
+        if 'current_episode' in checkpoint:
+            self.current_episode = checkpoint['current_episode']
+        if 'current_lr' in checkpoint:
+            self.current_lr = checkpoint['current_lr']
+        if 'current_entropy_coef' in checkpoint:
+            self.current_entropy_coef = checkpoint['current_entropy_coef']
 
         # Set to evaluation mode (disables dropout, batch norm updates, etc.)
         self.actor.eval()
