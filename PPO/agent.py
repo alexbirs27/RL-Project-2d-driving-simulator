@@ -34,7 +34,7 @@ class PPOAgent:
 
 
     def update_learning_rate(self, current_epoch, total_epochs):
-        """Linear decay: lr goes from initial_lr to 10% of initial_lr over training"""
+        #Linear decay: lr goes from initial_lr to 10% of initial_lr over training
         progress = current_epoch / total_epochs
         new_lr = self.initial_lr * (0.1 + 0.9 * (1.0 - progress))  # Floor at 10% of initial LR
 
@@ -44,12 +44,12 @@ class PPOAgent:
             param_group['lr'] = new_lr
 
     def update_entropy_coef(self, current_epoch, total_epochs):
-        """Decay entropy coefficient from initial value to 10% over training (less exploration over time)"""
+        # Decay entropy coefficient from initial value to 10% over training (less exploration over time)
         progress = current_epoch / total_epochs
         self.entropy_coef = self.initial_entropy_coef * (0.1 + 0.9 * (1.0 - progress))
 
     def save_checkpoint(self, filepath, epoch, reward):
-        """Save model checkpoint with policy, value network, and training info"""
+        # Save model checkpoint with policy, value network, and training info
         torch.save({
             'policy_state_dict': self.policy.state_dict(),
             'value_state_dict': self.value_fn.state_dict(),
@@ -60,7 +60,7 @@ class PPOAgent:
         }, filepath)
 
     def load_checkpoint(self, filepath):
-        """Load model checkpoint"""
+        # Load model checkpoint
         checkpoint = torch.load(filepath)
         self.policy.load_state_dict(checkpoint['policy_state_dict'])
         self.value_fn.load_state_dict(checkpoint['value_state_dict'])
