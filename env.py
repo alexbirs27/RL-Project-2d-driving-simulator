@@ -188,17 +188,9 @@ class RacingEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _cast_ray(self, x: float, y: float, angle: float, max_distance: float = None) -> float:
-        """
-        Cast a ray from (x, y) in direction 'angle' and return distance to track edge.
+        # Cast a ray from (x, y) in direction 'angle' and return distance to track edge.
+        # Returns: Distance to track edge (normalized 0-1, where 1 = max_distance)
 
-        Args:
-            x, y: Starting position
-            angle: Direction to cast ray (in radians)
-            max_distance: Maximum ray length (from config)
-
-        Returns:
-            Distance to track edge (normalized 0-1, where 1 = max_distance)
-        """
         if max_distance is None:
             max_distance = RAY_MAX_DISTANCE
 
@@ -234,12 +226,9 @@ class RacingEnv(gym.Env):
         return 1.0  # Hit max distance, return normalized max
 
     def _get_distance_to_centerline(self, x: float, y: float) -> tuple[float, int]:
-        """
-        Calculate distance from position to nearest centerline point.
+        # Calculate distance from position to nearest centerline point.
+        # Returns:(distance, nearest_index): Distance in pixels and index of nearest centerline point
 
-        Returns:
-            (distance, nearest_index): Distance in pixels and index of nearest centerline point
-        """
         track = self.engine.track
         min_dist = float('inf')
         nearest_idx = 0
@@ -253,17 +242,9 @@ class RacingEnv(gym.Env):
         return min_dist, nearest_idx
 
     def _get_angle_to_centerline(self, x: float, y: float, car_angle: float, nearest_idx: int) -> float:
-        """
-        Calculate angle difference between car heading and centerline direction.
+        #Calculate angle difference between car heading and centerline direction.
+        # Returns: Angle difference in radians 
 
-        Args:
-            x, y: Car position
-            car_angle: Car heading in radians
-            nearest_idx: Index of nearest centerline point
-
-        Returns:
-            Angle difference in radians (-π to π)
-        """
         track = self.engine.track
 
         # Get tangent direction of centerline at nearest point
@@ -277,9 +258,9 @@ class RacingEnv(gym.Env):
         dy = cy2 - cy1
         centerline_angle = math.atan2(dx, -dy)  # Same convention as car angle
 
-        # Calculate angle difference (normalize to -π to π)
+        # Calculate angle difference
         angle_diff = car_angle - centerline_angle
-        # Normalize to [-π, π]
+        # Normalize to [-pi, pi]
         while angle_diff > math.pi:
             angle_diff -= 2 * math.pi
         while angle_diff < -math.pi:
@@ -288,12 +269,10 @@ class RacingEnv(gym.Env):
         return angle_diff
 
     def _get_lookahead_corners(self, car_x: float, car_y: float, nearest_idx: int) -> tuple:
-        """
-        Get lookahead information for next 3 corners.
+        # Get lookahead information for next 3 corners.
 
-        Returns:
-            (d1, d2, d3, c1, c2, c3): Distances and curvatures for 3 lookahead points
-        """
+        # Returns: (d1, d2, d3, c1, c2, c3): Distances and curvatures for 3 lookahead points
+
         track = self.engine.track
 
         # Sample 3 points ahead on centerline
@@ -340,8 +319,6 @@ class RacingEnv(gym.Env):
 
     def _get_observation(self) -> np.ndarray:
         """
-        Improved observation with navigation guidance.
-
         Returns 10 values:
             [front_ray, front_right_ray, front_left_ray, right_ray, left_ray,
              next_checkpoint_distance, angle_to_next_checkpoint,
@@ -351,7 +328,7 @@ class RacingEnv(gym.Env):
         car = self.engine.car
         track = self.engine.track
 
-        # === 1-5. Cast 5 rays for collision avoidance (400px range) ===
+        # Cast 5 rays for collision avoidance (400px range)
         ray_angles = [
             0.0,              # Front
             math.pi / 4,      # Front-right (45°)
@@ -366,7 +343,7 @@ class RacingEnv(gym.Env):
             distance = self._cast_ray(state.x, state.y, ray_angle)
             ray_distances.append(distance)
 
-        # === 6-7. Navigation to NEXT checkpoint (tells agent WHERE TO GO) ===
+        # Navigation to NEXT checkpoint (tells agent WHERE TO GO) 
         # Get position of next checkpoint
         next_cp_pos = track.get_checkpoint_position(self.next_checkpoint)
 
@@ -379,23 +356,23 @@ class RacingEnv(gym.Env):
         # Angle to next checkpoint (tells agent which direction to turn)
         angle_to_next_cp = math.atan2(dx, -dy)  # Angle of checkpoint in world
         angle_diff = angle_to_next_cp - state.angle  # Difference from car's heading
-        # Normalize to [-π, π]
+        
         while angle_diff > math.pi:
             angle_diff -= 2 * math.pi
         while angle_diff < -math.pi:
             angle_diff += 2 * math.pi
         angle_to_next_cp_norm = np.clip(angle_diff / math.pi, -1, 1)
 
-        # === 8. Distance to centerline (normalized 0-1) ===
+        # Distance to centerline (normalized 0-1)
         dist_to_center, nearest_idx = self._get_distance_to_centerline(state.x, state.y)
         track_half_width = track.road_width / 2
         dist_to_center_norm = np.clip(dist_to_center / track_half_width, 0, 1)
 
-        # === 9. Angle to centerline (normalized -1 to 1) ===
+        # Angle to centerline (normalized -1 to 1)
         angle_to_center = self._get_angle_to_centerline(state.x, state.y, state.angle, nearest_idx)
         angle_to_center_norm = np.clip(angle_to_center / math.pi, -1, 1)
 
-        # === 10. Velocity (normalized 0-1) ===
+        # Velocity (normalized 0-1) 
         velocity_norm = np.clip(abs(state.velocity) / car.max_velocity, 0, 1)
 
         # Construct observation vector
@@ -431,9 +408,7 @@ class RacingEnv(gym.Env):
 
         current_cp = track.get_nearest_checkpoint(state.x, state.y)
 
-        # ========================================
-        # 1. CHECKPOINT PROGRESS (Primary Goal)
-        # ========================================
+        # checkpoint progress
         # Only reward if we reached the NEXT checkpoint (prevents reverse exploit)
         if current_cp == self.next_checkpoint:
             reward += REWARD_CHECKPOINT
@@ -445,17 +420,13 @@ class RacingEnv(gym.Env):
 
         self.last_checkpoint = current_cp
 
-        # ========================================
-        # 2. SPEED REWARD (Go Fast!)
-        # ========================================
+        # speed reward
         # Simple velocity reward (encourages speed)
         if state.on_road:
             speed_reward = (abs(state.velocity) / car.max_velocity) * REWARD_SPEED
             reward += speed_reward
 
-        # ========================================
-        # 3. RACING LINE BONUS
-        # ========================================
+        # racing line bonus
         # Reward staying near centerline
         if state.on_road:
             dist_to_center, _ = self._get_distance_to_centerline(state.x, state.y)
@@ -464,15 +435,11 @@ class RacingEnv(gym.Env):
             centerline_score = 1.0 - (dist_to_center / track_half_width)
             reward += centerline_score * REWARD_CENTERLINE
 
-        # ========================================
-        # 4. OFF-ROAD PENALTY
-        # ========================================
+        # off-road penalty
         if not state.on_road:
             reward += REWARD_OFFROAD  # Note: REWARD_OFFROAD is negative in config
 
-        # ========================================
-        # 5. LAP COMPLETION BONUS
-        # ========================================
+        # lap completion bonus
         if state.lap_complete:
             reward += REWARD_LAP_COMPLETE
 
@@ -494,7 +461,7 @@ class RacingEnv(gym.Env):
         return False
 
     def _get_info(self) -> Dict[str, Any]:
-        """Get additional info about the environment state."""
+        # Get additional info about the environment state
         state = self.engine.get_state()
         return {
             "lap_time": state.lap_time,
@@ -523,14 +490,4 @@ class RacingEnv(gym.Env):
 
 
 def make_env(render_mode: Optional[str] = None, max_steps: int = None):
-    """
-    Factory function to create the environment.
-
-    Args:
-        render_mode: "human" for visual rendering, None for headless
-        max_steps: Maximum steps per episode
-
-    Returns:
-        RacingEnv instance
-    """
     return RacingEnv(render_mode=render_mode, max_steps=max_steps)
