@@ -1,15 +1,6 @@
 import numpy as np
 
 class ARSAgent:
-    """
-    ARS-V2 (Augmented Random Search Version 2) Agent
-
-    Improvements over basic ARS:
-    - State normalization (running mean/std)
-    - Top-directions selection (only use best deltas)
-    - Noise decay over training
-    - Better hyperparameters for driving task
-    """
 
     def __init__(self, state_dim, action_dim, learning_rate=0.03, noise=0.025,
                  num_deltas=32, num_best_deltas=16, normalize_states=True):
@@ -23,7 +14,7 @@ class ARSAgent:
         self.num_best_deltas = num_best_deltas  # Top-k deltas to use
         self.normalize_states = normalize_states
 
-        # Politica liniara: Matrice de greutati (weights)
+        # Linear policy: Weight matrix
         self.weights = np.zeros((action_dim, state_dim))
 
         # Running statistics for state normalization
@@ -32,7 +23,6 @@ class ARSAgent:
         self.state_n = 0  # Number of states seen
 
     def update_state_stats(self, states):
-        """Update running mean and std for state normalization"""
         states = np.array(states)
         batch_mean = np.mean(states, axis=0)
         batch_std = np.std(states, axis=0)
@@ -55,16 +45,12 @@ class ARSAgent:
         self.state_n = new_n
 
     def normalize_state(self, state):
-        """Normalize state using running statistics"""
         if self.normalize_states and self.state_n > 0:
             return (state - self.state_mean) / self.state_std
         return state
 
     def select_action(self, state, delta=None, direction=None):
-        """
-        Calculeaza actiunea. Daca delta este prezent, aplica perturbarea
-        pentru explorare in timpul antrenamentului.
-        """
+
         # Normalize state
         norm_state = self.normalize_state(state)
 
@@ -81,9 +67,7 @@ class ARSAgent:
         return np.argmax(logits)
 
     def update(self, rollouts, sigma_rewards):
-        """
-        ARS-V2 Update: foloseste doar top-k cele mai bune directii
-        """
+
         # Sort rollouts by max(r_pos, r_neg) descending
         rollouts_sorted = sorted(rollouts,
                                   key=lambda x: max(x[0], x[1]),
@@ -100,7 +84,7 @@ class ARSAgent:
         self.weights += self.lr / (self.num_best_deltas * sigma_rewards + 1e-8) * step
 
     def decay_hyperparameters(self, current_iter, total_iters):
-        """Decay learning rate and noise over training"""
+
         progress = current_iter / total_iters
 
         # Linear decay to 30% of initial values

@@ -15,16 +15,16 @@ class A2CAgent:
         self.max_grad_norm = max_grad_norm
         self.initial_lr = lr
 
-        # Initializare retele
+        # Initialize
         self.actor = ActorNet(state_dim, action_dim)
         self.critic = CriticNet(state_dim)
 
-        # Optimizatoare
+        # Optimizers pentru actor si critic
         self.opt_actor = optim.Adam(self.actor.parameters(), lr=lr)
         self.opt_critic = optim.Adam(self.critic.parameters(), lr=lr)
 
     def update_learning_rate(self, current_episode, total_episodes):
-        """Linear decay: lr goes from initial_lr to 10% of initial_lr"""
+
         progress = current_episode / total_episodes
         new_lr = self.initial_lr * (0.1 + 0.9 * (1.0 - progress))
 
@@ -34,15 +34,11 @@ class A2CAgent:
             param_group['lr'] = new_lr
 
     def update_entropy_coef(self, current_episode, total_episodes):
-        """Decay entropy coefficient from initial value to 10%"""
+
         progress = current_episode / total_episodes
         self.entropy_coef = self.initial_entropy_coef * (0.1 + 0.9 * (1.0 - progress))
 
     def act(self, state):
-        """
-        Primeste starea si returneaza actiunea + log_probabilitatea ei.
-        Folosit in timpul antrenamentului.
-        """
         state_t = torch.tensor(state, dtype=torch.float32)
 
         # Actor
@@ -56,9 +52,7 @@ class A2CAgent:
         return action.item(), log_prob
 
     def select_action(self, state):
-        """
-        Versiune simplificata doar pentru evaluare (fara gradient).
-        """
+
         state_t = torch.tensor(state, dtype=torch.float32)
         with torch.no_grad():
             logits = self.actor(state_t)
@@ -67,10 +61,7 @@ class A2CAgent:
         return action
 
     def compute_gae(self, rewards, values, next_value, dones):
-        """
-        Generalized Advantage Estimation (GAE) - same as PPO
-        This gives much better gradient estimates than simple returns.
-        """
+
         values = values + [next_value]
         advantages = []
         gae = 0.0
@@ -94,9 +85,7 @@ class A2CAgent:
         )
 
     def update(self, rewards, log_probs, states, dones, next_state):
-        """
-        Improved update with GAE instead of simple discounted returns.
-        """
+
         # Convert to tensors
         log_probs_t = torch.stack(log_probs)
         states_t = torch.tensor(np.array(states), dtype=torch.float32)
@@ -147,7 +136,7 @@ class A2CAgent:
         return total_loss.item()
 
     def save(self, path):
-        """Save model with optimizer states"""
+
         torch.save({
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
@@ -156,7 +145,7 @@ class A2CAgent:
         }, path)
 
     def load(self, path):
-        """Load model"""
+
         checkpoint = torch.load(path)
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
